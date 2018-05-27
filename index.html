@@ -240,8 +240,8 @@
         <option value="-1">左右互搏</option>
     </select>
     <span>重新开始: </span>
-    <input type="button" value="先手" onclick="resetgame()">
-    <input type="button" value="后手" onclick="resetgame(1)">
+    <input type="button" value="先手" onclick="resetgame(1)">
+    <input type="button" value="后手" onclick="resetgame()">
     <br>
     <input type="text" id="gx" value="5">
     <br>
@@ -415,6 +415,10 @@ gameview.listen=function(){
     })
     game.win.push(function(playerId){
         gameinfo.children[playerId].children[0].children[1].innerHTML='win'
+        setTimeout(function(){
+            var replay=confirm('player'+(playerId+1)+' win, replay?')
+            if(replay)resetgame(first);
+        },30)
     })
 }
 gameview.init=function(game){
@@ -715,13 +719,13 @@ changeAI.onchange=function(){
 ////////////////// resetgame //////////////////
 AINum=~~changeAI.value
 function resetgame(_first){
-    first=_first?0:1;
+    first=_first?1:0;
     gameview.init(game)
     AIList = [GreedyRandomAI,OffensiveKeeperAI]
     if(AINum===-1)return;
     playerAI = new AIList[AINum]().init(game).bind(first)
 }
-resetgame()
+resetgame(1)
 </script>
 </body>
 </html>
