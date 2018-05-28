@@ -234,10 +234,10 @@
 
 <div>
     <span>对手: </span>
-    <select id="changeAI">
-        <option value="1">中等AI</option>
-        <option value="0">简单AI</option>
-        <option value="-1">左右互搏</option>
+    <select id="changePlayerSelect">
+        <option value="2">中等AI</option>
+        <option value="1">简单AI</option>
+        <option value="0">左右互搏</option>
     </select>
     <span>重新开始: </span>
     <input type="button" value="先手" onclick="resetgame(1)">
@@ -417,7 +417,7 @@ gameview.listen=function(){
         gameinfo.children[playerId].children[0].children[1].innerHTML='win'
         setTimeout(function(){
             var replay=confirm('player'+(playerId+1)+' win, replay?')
-            if(replay)resetgame(first);
+            if(replay)resetgame(first2);
         },30)
     })
 }
@@ -436,10 +436,10 @@ gameview.init=function(game){
     gameview.listen()
 }
 
-////////////////// gameAI //////////////////
-gameAI=function(){}
+////////////////// gamePlayer //////////////////
+gamePlayer=function(){}
 
-gameAI.prototype.bind=function(playerId,callback){
+gamePlayer.prototype.bind=function(playerId,callback){
     this.playerId=playerId
     this.player=this.game.player[playerId]
     var AI=this;
@@ -448,36 +448,47 @@ gameAI.prototype.bind=function(playerId,callback){
     if(this.game.playerId===playerId)this.changeTurn(callback);
     return this
 }
-gameAI.prototype.remove=function(){
+gamePlayer.prototype.remove=function(){
     this.player.changeTurn=function(callback){game.lock=0}
     this.player.continueTurn=function(callback){}
     if(this.game.playerId===this.playerId)game.lock=0;
 }
-gameAI.prototype.init=function(game){
+gamePlayer.prototype.init=function(game){
     this.game=game
     return this
 }
 
-gameAI.prototype.changeTurn=function(callback){
+gamePlayer.prototype.changeTurn=function(callback){
     //this.game.lock=1
     //计算
     //this.game.lock=0
     //this.game.putxy(x,y)
 }
 
-gameAI.prototype.continueTurn=function(callback){
+gamePlayer.prototype.continueTurn=function(callback){
     //this.game.lock=1
     //计算
     //this.game.lock=0
     //this.game.putxy(x,y)
 }
+
+////////////////// SinglePlayer //////////////////
+SinglePlayer=function(){
+    gamePlayer.call(this)
+    return this
+}
+SinglePlayer.prototype = Object.create(gamePlayer.prototype)
+SinglePlayer.prototype.constructor = SinglePlayer
+
+SinglePlayer.prototype.changeTurn=function(callback){this.game.lock=0}
+SinglePlayer.prototype.continueTurn=function(callback){this.game.lock=0}
 
 ////////////////// GreedyRandomAI //////////////////
 GreedyRandomAI=function(){
-    gameAI.call(this)
+    gamePlayer.call(this)
     return this
 }
-GreedyRandomAI.prototype = Object.create(gameAI.prototype)
+GreedyRandomAI.prototype = Object.create(gamePlayer.prototype)
 GreedyRandomAI.prototype.constructor = GreedyRandomAI
 
 GreedyRandomAI.prototype.rand=function(n){
@@ -708,22 +719,22 @@ OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
     console.log('bug:理论上不应该走到这里')
     return this.getRandWhere(1)
 }
-////////////////// changeAI //////////////////
-var changeAI = document.getElementById('changeAI')
-changeAI.onchange=function(){
-    AINum=~~changeAI.value
-    if(playerAI)playerAI.remove();
-    if(AINum===-1){playerAI=null}
-    else {playerAI = new AIList[AINum]().init(game).bind(first)}
+
+////////////////// changePlayerSelect //////////////////
+var changePlayerSelect = document.getElementById('changePlayerSelect')
+changePlayerSelect.onchange=function(){
+    playerIndex=~~changePlayerSelect.value
+    player2AI.remove();
+    player2AI = new playerList[playerIndex]().init(game).bind(first2)
 }
+
 ////////////////// resetgame //////////////////
-AINum=~~changeAI.value
-function resetgame(_first){
-    first=_first?1:0;
+playerList = [SinglePlayer,GreedyRandomAI,OffensiveKeeperAI]
+playerIndex=~~changePlayerSelect.value
+function resetgame(_first2){
+    first2=_first2?1:0; // 此处的first2是player2的先后手, 先手对应的是0
     gameview.init(game)
-    AIList = [GreedyRandomAI,OffensiveKeeperAI]
-    if(AINum===-1)return;
-    playerAI = new AIList[AINum]().init(game).bind(first)
+    player2AI = new playerList[playerIndex]().init(game).bind(first2)
 }
 resetgame(1)
 </script>
