@@ -259,15 +259,19 @@ document.getElementsByClassName('middletop')[0].style.marginTop=~~(innerHeight/1
 
 <script>
 ////////////////// game //////////////////
-game={xsize:6,ysize:6}
+Game=function(){
+    this.xsize=6
+    this.ysize=6
+}
 
-game.POINT=1
-game.EDGE=0
-game.SCORE=2
-game.EDGE_USED=-1
-game.SCORE_PLAYER=[4,8]
+Game.prototype.POINT=1
+Game.prototype.EDGE=0
+Game.prototype.SCORE=2
+Game.prototype.EDGE_USED=-1
+Game.prototype.SCORE_PLAYER=[4,8]
 
-game.initMap=function(){
+Game.prototype.initMap=function(){
+    var game=this
     game.winScore=game.ysize*game.xsize
     game.winScore=game.winScore%2?(game.winScore+1)/2:game.winScore/2
     game.map=[]
@@ -280,13 +284,15 @@ game.initMap=function(){
         game.map.push(aa)
     }
 }
-game.xy=function(x,y,value){
+Game.prototype.xy=function(x,y,value){
+    var game=this
     if(x<0||x>2*game.xsize)return 'out range';
     if(y<0||y>2*game.ysize)return 'out range';
     if(value==null)return game.map[y][x];
     game.map[y][x]=value
 }
-game.initPlayer=function(){
+Game.prototype.initPlayer=function(){
+    var game=this
     game.playerId=0
     game.player=[]
     for(var ii=0;ii<2;ii++){
@@ -300,7 +306,8 @@ game.initPlayer=function(){
 }
 
 
-game.putxy=function(x,y,callback){
+Game.prototype.putxy=function(x,y,callback){
+    var game=this
     if(game.lock){
         if(callback)callback(null,'lock');
         return 'lock';
@@ -346,7 +353,8 @@ game.putxy=function(x,y,callback){
         return 'changeTurn'
     }
 }
-game.init=function(){
+Game.prototype.init=function(){
+    var game=this
     game.lock=0
     game.initMap()
     game.initPlayer()
@@ -436,10 +444,10 @@ gameview.init=function(game){
     gameview.listen()
 }
 
-////////////////// gamePlayer //////////////////
-gamePlayer=function(){}
+////////////////// GamePlayer //////////////////
+GamePlayer=function(){}
 
-gamePlayer.prototype.bind=function(playerId,callback){
+GamePlayer.prototype.bind=function(playerId,callback){
     this.playerId=playerId
     this.player=this.game.player[playerId]
     var AI=this;
@@ -448,24 +456,24 @@ gamePlayer.prototype.bind=function(playerId,callback){
     if(this.game.playerId===playerId)this.changeTurn(callback);
     return this
 }
-gamePlayer.prototype.remove=function(){
+GamePlayer.prototype.remove=function(){
     this.player.changeTurn=function(callback){game.lock=0}
     this.player.continueTurn=function(callback){}
     if(this.game.playerId===this.playerId)game.lock=0;
 }
-gamePlayer.prototype.init=function(game){
+GamePlayer.prototype.init=function(game){
     this.game=game
     return this
 }
 
-gamePlayer.prototype.changeTurn=function(callback){
+GamePlayer.prototype.changeTurn=function(callback){
     //this.game.lock=1
     //计算
     //this.game.lock=0
     //this.game.putxy(x,y)
 }
 
-gamePlayer.prototype.continueTurn=function(callback){
+GamePlayer.prototype.continueTurn=function(callback){
     //this.game.lock=1
     //计算
     //this.game.lock=0
@@ -474,10 +482,10 @@ gamePlayer.prototype.continueTurn=function(callback){
 
 ////////////////// SinglePlayer //////////////////
 SinglePlayer=function(){
-    gamePlayer.call(this)
+    GamePlayer.call(this)
     return this
 }
-SinglePlayer.prototype = Object.create(gamePlayer.prototype)
+SinglePlayer.prototype = Object.create(GamePlayer.prototype)
 SinglePlayer.prototype.constructor = SinglePlayer
 
 SinglePlayer.prototype.changeTurn=function(callback){this.game.lock=0}
@@ -485,10 +493,10 @@ SinglePlayer.prototype.continueTurn=function(callback){this.game.lock=0}
 
 ////////////////// GreedyRandomAI //////////////////
 GreedyRandomAI=function(){
-    gamePlayer.call(this)
+    GamePlayer.call(this)
     return this
 }
-GreedyRandomAI.prototype = Object.create(gamePlayer.prototype)
+GreedyRandomAI.prototype = Object.create(GamePlayer.prototype)
 GreedyRandomAI.prototype.constructor = GreedyRandomAI
 
 GreedyRandomAI.prototype.rand=function(n){
@@ -733,6 +741,7 @@ playerList = [SinglePlayer,GreedyRandomAI,OffensiveKeeperAI]
 playerIndex=~~changePlayerSelect.value
 function resetgame(_first2){
     first2=_first2?1:0; // 此处的first2是player2的先后手, 先手对应的是0
+    game = new Game()
     gameview.init(game)
     player2AI = new playerList[playerIndex]().init(game).bind(first2)
 }
