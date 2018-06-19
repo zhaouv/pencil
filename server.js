@@ -73,8 +73,8 @@ pencil.on('connection', function (socket) {
 
             printlog(getTime()+'Match '+rand+": "+temp.id+" with "+socket.id);
 
-            temp.emit('start', 1, rand);
-            socket.emit('start', 2, rand);
+            temp.emit('start', 0, rand);
+            socket.emit('start', 1, rand);
             printlog(getTime()+rand+" start!");
 
             var curr = pencil.adapter.rooms[rand];
@@ -101,7 +101,7 @@ pencil.on('connection', function (socket) {
             // pencil.in(socket.id).emit('error', '房间已满');
             printlog(getTime()+id+" visitor: "+socket.id);
             socket.join(id);
-            pencil.in(id).emit('msg', ["目前观战人数："+(room.length-2), 0]);
+            pencil.in(id).emit('msg', ["目前观战人数："+(room.length-2), 2]);
             socket.emit('start', -1, id, room.board.join(""), room.pos);
             return;
         }
@@ -113,8 +113,8 @@ pencil.on('connection', function (socket) {
         printlog(getTime()+id+" player: "+socket.id);
         if (isset(first)) {
             room = pencil.adapter.rooms[id];
-            first.emit('start', 1, id);
-            socket.emit('start', 2, id);
+            first.emit('start', 0, id);
+            socket.emit('start', 1, id);
             printlog(getTime()+id+" start!");
             room.first = first.id;
             room.second = socket.id;
@@ -171,7 +171,7 @@ pencil.on('connection', function (socket) {
                     pencil.in(id).emit('error', '对方断开了连接');
                     return;
                 }
-                pencil.in(id).emit('msg', ["目前观战人数："+(pencil.adapter.rooms[id].length-3), 0]);
+                pencil.in(id).emit('msg', ["目前观战人数："+(pencil.adapter.rooms[id].length-3), 2]);
                 return;
             }
             pencil.in(id).emit('error', '对方断开了连接');

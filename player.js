@@ -68,6 +68,56 @@ NetworkPlayer.prototype.remove=function(){
 NetworkPlayer.prototype.initSocket=function(){
     var socket = io(':5050/pencil')
     this.socket=socket
+    var thisplayer = this
+    var printtip = console.log
+    var updateBoard = function(board, pos){}
+    var losegame = function(){}
+    var wingame = function(){}
+    var put_down = function(x, y, type){}
+    var isWin = function(pid){}
+
+    // start game
+    socket.on('start', function(data, room, board, pos) {
+        thisplayer.playerId=data //先后手
+        core.setFlag('room', room);
+        if (data>=0) {
+            printtip("开始游戏！\n你当前"+(data==0?"先手":"后手")+"。")
+        }
+        else {
+            printtip("观战模式")
+            updateBoard(board, pos)
+        }
+    })
+
+    socket.on('ready', function() {
+        thisplayer.game.lock=data==0?1:0
+    })
+
+    socket.on('error', function(reason) {
+        printtip("\t[错误]"+(reason||"未知错误"))
+        losegame()
+    })
+
+    socket.on('put', function(data) {
+        if (data[2]!=thisplayer.playerId && thisplayer.playerId>=0) {
+            put_down(data[0], data[1], data[2])
+            if (isWin(data[2])) {
+                printtip("\t[你输了]很遗憾，对面获胜了。")
+            }
+        }
+    })
+
+    socket.on('msg', function (data, room) {
+        if (data[1]<0 || data[1]!=thisplayer.playerId) { //-1游客 0先手 1后手 2系统
+            printtip((data[1]>=0?"对方消息：":data[1]==2?"":"游客消息：")+data[0]);
+        }
+    })
+
+    socket.on('board', function (board, pos) {
+        if (thisplayer.playerId==-1) {
+            updateBoard(board, pos);
+        }
+    })
 }
 ////////////////// GreedyRandomAI //////////////////
 GreedyRandomAI=function(){
