@@ -258,7 +258,7 @@ document.getElementsByClassName('middletop')[0].style.marginTop=~~(innerHeight/1
 </script>
 
 <script>
-////////////////// game //////////////////
+////////////////// Game //////////////////
 Game=function(){
     this.xsize=6
     this.ysize=6
@@ -480,17 +480,41 @@ GamePlayer.prototype.continueTurn=function(callback){
     //this.game.putxy(x,y)
 }
 
-////////////////// SinglePlayer //////////////////
-SinglePlayer=function(){
+////////////////// LocalPlayer //////////////////
+LocalPlayer=function(){
     GamePlayer.call(this)
     return this
 }
-SinglePlayer.prototype = Object.create(GamePlayer.prototype)
-SinglePlayer.prototype.constructor = SinglePlayer
+LocalPlayer.prototype = Object.create(GamePlayer.prototype)
+LocalPlayer.prototype.constructor = LocalPlayer
 
-SinglePlayer.prototype.changeTurn=function(callback){this.game.lock=0}
-SinglePlayer.prototype.continueTurn=function(callback){this.game.lock=0}
+LocalPlayer.prototype.changeTurn=function(callback){this.game.lock=0}
+LocalPlayer.prototype.continueTurn=function(callback){this.game.lock=0}
 
+////////////////// NetworkPlayer //////////////////
+NetworkPlayer=function(){
+    GamePlayer.call(this)
+    return this
+}
+NetworkPlayer.prototype = Object.create(NetworkPlayer.prototype)
+NetworkPlayer.prototype.constructor = NetworkPlayer
+
+NetworkPlayer.prototype.changeTurn=function(callback){this.game.lock=1}
+NetworkPlayer.prototype.continueTurn=function(callback){this.game.lock=1}
+
+NetworkPlayer.prototype.bind=function(playerId,callback){
+    new GamePlayer().bind.call(this,playerId,callback)
+    this.initSocket()
+    return this
+}
+NetworkPlayer.prototype.remove=function(){
+    new GamePlayer().remove.call(this)
+    this.socket.close()
+}
+NetworkPlayer.prototype.initSocket=function(){
+    var socket = io(':5050/pencil')
+    this.socket=socket
+}
 ////////////////// GreedyRandomAI //////////////////
 GreedyRandomAI=function(){
     GamePlayer.call(this)
@@ -737,7 +761,7 @@ changePlayerSelect.onchange=function(){
 }
 
 ////////////////// resetgame //////////////////
-playerList = [SinglePlayer,GreedyRandomAI,OffensiveKeeperAI]
+playerList = [LocalPlayer,GreedyRandomAI,OffensiveKeeperAI]
 playerIndex=~~changePlayerSelect.value
 function resetgame(_first2){
     first2=_first2?1:0; // 此处的first2是player2的先后手, 先手对应的是0
@@ -747,5 +771,6 @@ function resetgame(_first2){
 }
 resetgame(1)
 </script>
+<script src="./socket.io/socket.io.js"></script>
 </body>
 </html>

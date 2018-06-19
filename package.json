@@ -1,0 +1,17 @@
+{
+    "name": "pencil",
+    "version": "1.0.0",
+    "description": "pencil",
+    "main": "server.js",
+    "scripts": {
+        "test": "node server.js"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+ssh://git@github.com:zhaouv/pencil.git"
+    },
+    "license": "WTFPL",
+    "dependencies": {
+        "socket.io": "^2.1.1"
+    }
+}
