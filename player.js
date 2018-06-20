@@ -90,7 +90,7 @@ NetworkPlayer.prototype.initSocket=function(){
 
     // start game
     socket.on('start', function(data, room, board, pos) {
-        thisplayer.playerId=data //先后手
+        // thisplayer.playerId=data //先后手
         thisplayer.room=room
         if (data>=0) {
             printtip("连接中！\n你当前"+(data==0?"先手":"后手")+"。")
