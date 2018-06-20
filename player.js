@@ -50,7 +50,7 @@ NetworkPlayer=function(){
     GamePlayer.call(this)
     return this
 }
-NetworkPlayer.prototype = Object.create(NetworkPlayer.prototype)
+NetworkPlayer.prototype = Object.create(GamePlayer.prototype)
 NetworkPlayer.prototype.constructor = NetworkPlayer
 
 NetworkPlayer.prototype.changeTurn=function(callback){this.game.lock=1}
@@ -58,52 +58,65 @@ NetworkPlayer.prototype.continueTurn=function(callback){this.game.lock=1}
 
 NetworkPlayer.prototype.bind=function(playerId,callback){
     new GamePlayer().bind.call(this,playerId,callback)
+    this.game.lock=1
     this.initSocket()
+    var thisplayer = this
+    this.sendPutFunc=function(x,y){
+        if(thisplayer.game.playerId===thisplayer.playerId)return;
+        thisplayer.socket.emit('put', thisplayer.room, [x,y,thisplayer.playerId]);
+    }
+    this.game.changeEdge.push(this.sendPutFunc)
+    this.connect()
     return this
 }
 NetworkPlayer.prototype.remove=function(){
     new GamePlayer().remove.call(this)
+    var index = this.game.changeEdge.indexOf(this.sendPutFunc)
+    this.game.changeEdge.splice(index,1)
     this.socket.close()
 }
+
 NetworkPlayer.prototype.initSocket=function(){
     var socket = io(':5050/pencil')
     this.socket=socket
     var thisplayer = this
-    var printtip = console.log
+    var printtip = function(tip){console.log(tip)}
     var updateBoard = function(board, pos){}
-    var losegame = function(){}
-    var wingame = function(){}
-    var put_down = function(x, y, type){}
-    var isWin = function(pid){}
+    var endgame = function(){}
+    var put_down = function(x, y, type){
+        thisplayer.game.lock=0
+        thisplayer.game.putxy(x,y)
+    }
 
     // start game
     socket.on('start', function(data, room, board, pos) {
         thisplayer.playerId=data //先后手
-        core.setFlag('room', room);
+        thisplayer.room=room
         if (data>=0) {
-            printtip("开始游戏！\n你当前"+(data==0?"先手":"后手")+"。")
-        }
-        else {
+            printtip("连接中！\n你当前"+(data==0?"先手":"后手")+"。")
+            // core.resetMap() // todo
+            thisplayer.socket.emit('ready', thisplayer.room)
+        } else {
             printtip("观战模式")
             updateBoard(board, pos)
         }
     })
 
     socket.on('ready', function() {
-        thisplayer.game.lock=data==0?1:0
+        if (thisplayer.playerId>=0) {
+            thisplayer.game.lock=thisplayer.playerId==1?0:1
+            printtip("开始游戏！\n你当前"+(thisplayer.playerId==0?"先手":"后手")+"。")
+        }
     })
 
     socket.on('error', function(reason) {
         printtip("\t[错误]"+(reason||"未知错误"))
-        losegame()
+        endgame()
     })
 
     socket.on('put', function(data) {
         if (data[2]!=thisplayer.playerId && thisplayer.playerId>=0) {
             put_down(data[0], data[1], data[2])
-            if (isWin(data[2])) {
-                printtip("\t[你输了]很遗憾，对面获胜了。")
-            }
         }
     })
 
@@ -118,6 +131,11 @@ NetworkPlayer.prototype.initSocket=function(){
             updateBoard(board, pos);
         }
     })
+}
+NetworkPlayer.prototype.connect=function(){
+    this.socket.emit('join', 0); // getinput -> room, 0 for rand match
+    var printtip = function(tip){console.log(tip)}
+    printtip("正在等待其他玩家加入，请稍后...")
 }
 ////////////////// GreedyRandomAI //////////////////
 GreedyRandomAI=function(){

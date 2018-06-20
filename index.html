@@ -235,9 +235,10 @@
 <div>
     <span>对手: </span>
     <select id="changePlayerSelect">
-        <option value="2">中等AI</option>
+        <option value="0">中等AI</option>
         <option value="1">简单AI</option>
-        <option value="0">左右互搏</option>
+        <option value="2">左右互搏</option>
+        <option value="3">网络对战</option>
     </select>
     <span>重新开始: </span>
     <input type="button" value="先手" onclick="resetgame(1)">
@@ -269,7 +270,7 @@ changePlayerSelect.onchange=function(){
 }
 
 ////////////////// resetgame //////////////////
-playerList = [LocalPlayer,GreedyRandomAI,OffensiveKeeperAI]
+playerList = [OffensiveKeeperAI,GreedyRandomAI,LocalPlayer,NetworkPlayer]
 playerIndex=~~changePlayerSelect.value
 function resetgame(_first2){
     first2=_first2?1:0; // 此处的first2是player2的先后手, 先手对应的是0
