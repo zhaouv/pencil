@@ -264,6 +264,7 @@ document.getElementsByClassName('middletop')[0].style.marginTop=~~(innerHeight/1
 ////////////////// changePlayerSelect //////////////////
 var changePlayerSelect = document.getElementById('changePlayerSelect')
 changePlayerSelect.onchange=function(){
+    if(window.location.href.indexOf(':5050')===-1)window.location='http://zhaouv.top/pencilnetwork';
     playerIndex=~~changePlayerSelect.value
     player2AI.remove();
     player2AI = new playerList[playerIndex]().init(game).bind(first2)
