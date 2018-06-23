@@ -23,6 +23,7 @@ Game.prototype.initMap=function(){
         }
         game.map.push(aa)
     }
+    game.history=[]
 }
 Game.prototype.xy=function(x,y,value){
     var game=this
@@ -57,6 +58,7 @@ Game.prototype.putxy=function(x,y,callback){
         return 'Invalid click';
     }
     game.xy(x,y,game.EDGE_USED)
+    game.history.push([x,y,game.playerId])
     // game.changeEdge
     game.changeEdge.forEach(function(f){f(x,y)})
     var directions=[{x:-1,y:0},{x:1,y:0},{x:0,y:-1},{x:0,y:1}]
@@ -93,8 +95,10 @@ Game.prototype.putxy=function(x,y,callback){
         return 'changeTurn'
     }
 }
-Game.prototype.init=function(){
+Game.prototype.init=function(xsize,ysize){
     var game=this
+    if(xsize)game.xsize=xsize;
+    if(ysize)game.ysize=ysize;
     game.lock=0
     game.initMap()
     game.initPlayer()
@@ -107,15 +111,12 @@ Game.prototype.init=function(){
     game.win.push(function(playerId){
         game.lock=1
     })
+
+    return game
 }
 
 ////////////////// gameview //////////////////
 gameview={}
-
-gameview.gamemap = document.getElementById('gamemap')
-gameview.gameinfo = document.getElementById('gameinfo')
-gameview.x = document.getElementById('gx')
-gameview.y = document.getElementById('gy')
 
 gameview.playerColor=['#fbb','#bbf']
 
@@ -131,7 +132,7 @@ gameview.initTable=function(){
     }
     gameview.gamemap.innerHTML=hstr
 }
-gameview.xy=function(x,y){return gamemap.children[y].children[x]}
+gameview.xy=function(x,y){return gameview.gamemap.children[y].children[x]}
 gameview.listen=function(){
     var game=gameview.game
     for(var jj=0;jj<2*game.ysize+1;jj++){
@@ -153,16 +154,16 @@ gameview.listen=function(){
     })
     game.changeScore.push(function(x,y,playerId,score){
         gameview.xy(x,y).children[0].style.background=gameview.playerColor[playerId]
-        gameinfo.children[playerId].children[0].children[0].innerHTML=score
+        gameview.gameinfo.children[playerId].children[0].children[0].innerHTML=score
     })
     game.changePlayer.push(function(playerId){
-        gameinfo.children[playerId].children[0].children[1].innerHTML='-'
-        gameinfo.children[1-playerId].children[0].children[1].innerHTML=''
-        gameinfo.children[playerId].style.background=gameview.playerColor[playerId]
-        gameinfo.children[1-playerId].style.background=''
+        gameview.gameinfo.children[playerId].children[0].children[1].innerHTML='-'
+        gameview.gameinfo.children[1-playerId].children[0].children[1].innerHTML=''
+        gameview.gameinfo.children[playerId].style.background=gameview.playerColor[playerId]
+        gameview.gameinfo.children[1-playerId].style.background=''
     })
     game.win.push(function(playerId){
-        gameinfo.children[playerId].children[0].children[1].innerHTML='win'
+        gameview.gameinfo.children[playerId].children[0].children[1].innerHTML='win'
         setTimeout(function(){
             var replay=confirm('player'+(playerId+1)+' win, replay?')
             if(replay)resetgame(first2);
@@ -170,16 +171,19 @@ gameview.listen=function(){
     })
 }
 gameview.init=function(game){
-    gameinfo.children[0].style.background=gameview.playerColor[0]
-    gameinfo.children[1].style.background=''
-    gameinfo.children[0].children[0].children[0].innerHTML='0'
-    gameinfo.children[1].children[0].children[0].innerHTML='0'
-    gameinfo.children[0].children[0].children[1].innerHTML='-'
-    gameinfo.children[1].children[0].children[1].innerHTML=''
+    gameview.gamemap = document.getElementById('gamemap')
+    gameview.gameinfo = document.getElementById('gameinfo')
+    gameview.x = document.getElementById('gx')
+    gameview.y = document.getElementById('gy')
+
+    gameview.gameinfo.children[0].style.background=gameview.playerColor[0]
+    gameview.gameinfo.children[1].style.background=''
+    gameview.gameinfo.children[0].children[0].children[0].innerHTML='0'
+    gameview.gameinfo.children[1].children[0].children[0].innerHTML='0'
+    gameview.gameinfo.children[0].children[0].children[1].innerHTML='-'
+    gameview.gameinfo.children[1].children[0].children[1].innerHTML=''
     gameview.game=game
-    game.xsize=~~gameview.x.value
-    game.ysize=~~gameview.y.value
-    game.init()
+    game.init(~~gameview.x.value,~~gameview.y.value)
     gameview.initTable()
     gameview.listen()
 }

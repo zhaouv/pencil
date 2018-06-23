@@ -225,10 +225,10 @@
 
 <div id="gameinfo">
     <div>
-        <p>player1 &nbsp; score <span>0</span> &nbsp; <span>-</span></p>
+        <p>先手玩家 &nbsp; score <span>0</span> &nbsp; <span>-</span></p>
     </div>
     <div>
-        <p>player2 &nbsp; score <span>0</span> &nbsp; <span></span></p>
+        <p>后手玩家 &nbsp; score <span>0</span> &nbsp; <span></span></p>
     </div>
 </div>
 
@@ -264,10 +264,10 @@ document.getElementsByClassName('middletop')[0].style.marginTop=~~(innerHeight/1
 ////////////////// changePlayerSelect //////////////////
 var changePlayerSelect = document.getElementById('changePlayerSelect')
 changePlayerSelect.onchange=function(){
-    if(window.location.href.indexOf(':5050')===-1)window.location='http://zhaouv.top/pencilnetwork';
     playerIndex=~~changePlayerSelect.value
-    player2AI.remove();
-    player2AI = new playerList[playerIndex]().init(game).bind(first2)
+    if(playerIndex===3 &&　window.location.href.indexOf(':5050')===-1)window.location='http://zhaouv.top/pencilnetwork';
+    player2.remove();
+    player2 = new playerList[playerIndex]().init(game).bind(first2)
 }
 
 ////////////////// resetgame //////////////////
@@ -277,7 +277,8 @@ function resetgame(_first2){
     first2=_first2?1:0; // 此处的first2是player2的先后手, 先手对应的是0
     game = new Game()
     gameview.init(game)
-    player2AI = new playerList[playerIndex]().init(game).bind(first2)
+    player1 = new LocalPlayer().init(game).bind(1-first2)
+    player2 = new playerList[playerIndex]().init(game).bind(first2)
 }
 resetgame(1)
 </script>
