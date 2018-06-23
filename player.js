@@ -106,6 +106,7 @@ NetworkPlayer.prototype.initSocket=function(){
         if (thisplayer.playerId>=0) {
             thisplayer.game.lock=thisplayer.playerId==1?0:1
             printtip("开始游戏！\n你当前"+(thisplayer.playerId==0?"先手":"后手")+"。")
+            thisplayer.ready()
         }
     })
 
@@ -137,6 +138,7 @@ NetworkPlayer.prototype.connect=function(){
     var printtip = function(tip){console.log(tip)}
     printtip("正在等待其他玩家加入，请稍后...")
 }
+NetworkPlayer.prototype.ready=function(){}
 ////////////////// GreedyRandomAI //////////////////
 GreedyRandomAI=function(){
     GamePlayer.call(this)
@@ -305,19 +307,21 @@ GreedyRandomAI.prototype.where=function(){
 }
 
 GreedyRandomAI.prototype.changeTurn=function(){
-    this.game.lock=1
+    var thisplayer = this
+    thisplayer.game.lock=1
     var where = this.where()
     setTimeout(function(){
-        this.game.lock=0
-        this.game.putxy(where.x,where.y)
+        thisplayer.game.lock=0
+        thisplayer.game.putxy(where.x,where.y)
     },250)
 }
 GreedyRandomAI.prototype.continueTurn=function(){
-    this.game.lock=1
+    var thisplayer = this
+    thisplayer.game.lock=1
     var where = this.where()
     setTimeout(function(){
-        this.game.lock=0
-        this.game.putxy(where.x,where.y)
+        thisplayer.game.lock=0
+        thisplayer.game.putxy(where.x,where.y)
     },120)
 }
 

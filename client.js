@@ -1,4 +1,6 @@
-var io =require('./socket.io/socket.io.js')
+var socketClient = require('socket.io-client')
+io = function(){return socketClient('http://localhost:5050/pencil')}
+
 require('./game.js')
 require('./player.js')
 
@@ -59,9 +61,15 @@ var server = http.createServer(function (request, response) {
     });
 });
 
-server.listen(5050, function () {
+/* server.listen(5050, function () {
     printlog(getTime()+'Starting server on port 5050');
-});
+}); */
 
 console.log(Game)
+first1=0
+game = new Game().init(5,5)
+player2 = new NetworkPlayer().init(game)
+player2.ready=function(){player1 = new OffensiveKeeperAI().init(game).bind(first1)}
+player2.bind(1-first1)
+
 console.log('end')
