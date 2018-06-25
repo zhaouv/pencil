@@ -133,6 +133,9 @@ gameview.initTable=function(){
     gameview.gamemap.innerHTML=hstr
 }
 gameview.xy=function(x,y){return gameview.gamemap.children[y].children[x]}
+gameview.printtip=function(tip){
+    gameview.gametip.innerText=tip
+}
 gameview.listen=function(){
     var game=gameview.game
     for(var jj=0;jj<2*game.ysize+1;jj++){
@@ -165,14 +168,15 @@ gameview.listen=function(){
     game.win.push(function(playerId){
         gameview.gameinfo.children[playerId].children[0].children[1].innerHTML='win'
         setTimeout(function(){
-            var replay=confirm('player'+(playerId+1)+' win, replay?')
+            var replay=confirm((playerId==0?'先手玩家':'后手玩家')+' win, replay?')
             if(replay)resetgame(first2);
         },30)
     })
 }
-gameview.init=function(game){
+gameview.init=function(game,hasInited){
     gameview.gamemap = document.getElementById('gamemap')
     gameview.gameinfo = document.getElementById('gameinfo')
+    gameview.gametip = document.getElementById('gametip')
     gameview.x = document.getElementById('gx')
     gameview.y = document.getElementById('gy')
 
@@ -183,7 +187,84 @@ gameview.init=function(game){
     gameview.gameinfo.children[0].children[0].children[1].innerHTML='-'
     gameview.gameinfo.children[1].children[0].children[1].innerHTML=''
     gameview.game=game
-    game.init(~~gameview.x.value,~~gameview.y.value)
+    if(hasInited){
+        gameview.x.value=game.xsize
+        gameview.y.value=game.ysize
+    } else {
+        game.init(~~gameview.x.value,~~gameview.y.value)
+    }
     gameview.initTable()
     gameview.listen()
+    return gameview
 }
+
+////////////////// ReplayController //////////////////
+ReplayController=function(){
+
+}
+
+ReplayController.prototype.init=function(game,gameview){
+    var rc = this
+    rc.game=game
+    rc.gameview=gameview
+    return rc
+}
+
+ReplayController.prototype.replay=function(step,time,callback){
+    var rc = this
+    var newgame = new Game().init(rc.game.xsize,rc.game.ysize)
+    rc.newgame = newgame
+    if(step=='last'){
+        if(rc.game.history.length>=2){
+            var index=rc.game.history.length-2
+            var lastplayer=rc.game.history[rc.game.history.length-1][2]
+            while(index>0){
+                if(rc.game.history[index][2]!==lastplayer)break;
+                index--;
+            }
+            step=index
+        } else {
+            step=null
+        }
+    }
+    if(step==null)step=rc.game.history.length;
+    if(time==null)time=10;
+    rc.player1 = new LocalPlayer().init(newgame,rc.gameview)
+    rc.player2 = new LocalPlayer().init(newgame,rc.gameview)
+    if(rc.gameview){
+        game=newgame
+        rc.gameview.init(game,'hasInited')
+    }
+    var stepfunc=function(cb){
+        newgame.lock=1
+        var func=function(){
+            nowstep=newgame.history.length
+            if(nowstep<step){
+                newgame.lock=0
+                newgame.putxy(rc.game.history[nowstep][0],rc.game.history[nowstep][1])
+            } else {
+                rc.player1.remove()
+                rc.player2.remove()
+                newgame.lock=1
+                if(callback){
+                    callback(newgame,rc.gameview)
+                } else {
+                    player2 = new LocalPlayer().init(newgame,rc.gameview).bind(1)
+                    player1 = new LocalPlayer().init(newgame,rc.gameview).bind(0)
+                }
+            }
+        }
+        if(time){
+            setTimeout(func,time)
+        } else {
+            func()
+        }
+    }
+    rc.player1.changeTurn=rc.player1.continueTurn=stepfunc
+    rc.player2.changeTurn=rc.player2.continueTurn=stepfunc
+    rc.player2.bind(1)
+    rc.player1.bind(0)
+    
+    return newgame
+}
+//gamea=JSON.parse( JSON.stringify(game));game=new ReplayController().init(gamea,gameview).replay('last',120,null)

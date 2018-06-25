@@ -11,9 +11,10 @@ GamePlayer.prototype.bind=function(playerId,callback){
     return this
 }
 GamePlayer.prototype.remove=function(){
+    var game=this.game
     this.player.changeTurn=function(callback){game.lock=0}
     this.player.continueTurn=function(callback){}
-    if(this.game.playerId===this.playerId)game.lock=0;
+    if(game.playerId===this.playerId)game.lock=0;
 }
 GamePlayer.prototype.init=function(game){
     this.game=game
@@ -56,6 +57,11 @@ NetworkPlayer.prototype.constructor = NetworkPlayer
 NetworkPlayer.prototype.changeTurn=function(callback){this.game.lock=1}
 NetworkPlayer.prototype.continueTurn=function(callback){this.game.lock=1}
 
+NetworkPlayer.prototype.init=function(game,gameview){
+    this.game=game
+    this.gameview=gameview
+    return this
+}
 NetworkPlayer.prototype.bind=function(playerId,callback){
     new GamePlayer().bind.call(this,playerId,callback)
     this.game.lock=1
@@ -73,14 +79,22 @@ NetworkPlayer.prototype.remove=function(){
     new GamePlayer().remove.call(this)
     var index = this.game.changeEdge.indexOf(this.sendPutFunc)
     this.game.changeEdge.splice(index,1)
+    this.sendPutFunc=null
     this.socket.close()
+}
+
+NetworkPlayer.prototype.printtip=function(tip){
+    console.log(tip)
+    if(this.gameview&&this.gameview.gametip){
+        this.gameview.printtip(tip)
+    }
 }
 
 NetworkPlayer.prototype.initSocket=function(){
     var socket = io(':5050/pencil')
     this.socket=socket
     var thisplayer = this
-    var printtip = function(tip){console.log(tip)}
+    var printtip = thisplayer.printtip
     var updateBoard = function(board, pos){}
     var endgame = function(){}
     var put_down = function(x, y, type){
@@ -135,7 +149,7 @@ NetworkPlayer.prototype.initSocket=function(){
 }
 NetworkPlayer.prototype.connect=function(){
     this.socket.emit('join', 0); // getinput -> room, 0 for rand match
-    var printtip = function(tip){console.log(tip)}
+    var printtip = this.printtip
     printtip("正在等待其他玩家加入，请稍后...")
 }
 NetworkPlayer.prototype.ready=function(){}
@@ -209,6 +223,7 @@ GreedyRandomAI.prototype.initMap=function(){
 
 GreedyRandomAI.prototype.getRandWhere=function(number){
     var count=0
+    var game=this.game
     for(var jj=0;jj<2*game.ysize+1;jj++){
         for(var ii=0;ii<2*game.xsize+1;ii++){
             if(this.xy(ii,jj)===number)count++;
@@ -228,6 +243,7 @@ GreedyRandomAI.prototype.getRandWhere=function(number){
 }
 
 GreedyRandomAI.prototype.initConnectedRegion=function(){
+    var game=this.game
     var visited = eval('['+Array(game.ysize+1).join('['+Array(game.xsize+1).join('false,')+'],')+']') // ysize*xsize的false
     var AI=this;
     var v=function(x,y,value){
@@ -334,6 +350,7 @@ OffensiveKeeperAI.prototype = Object.create(GreedyRandomAI.prototype)
 OffensiveKeeperAI.prototype.constructor = OffensiveKeeperAI
 
 OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
+    var game=this.game
     if(
         (this.edgeCount[1]===2||this.edgeCount[1]===1) && 
         (this.edgeCount[100]===1||this.edgeCount[100]===0)
