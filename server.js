@@ -50,10 +50,11 @@ var getTime = function() {
 const pencil = io.of('/pencil');
 pencil.on('connection', function (socket) {
 
-    var wait = function (socket) {
+    var wait = function (socket, data) { // data [xsize,ysize,playerId]
         if (!isset(pencil.adapter.rooms['waiting'])) {
             printlog(getTime()+'Waiting '+socket.id);
             socket.join('waiting');
+            pencil.adapter.rooms['waiting'].data=data
             return;
         }
 
@@ -73,8 +74,10 @@ pencil.on('connection', function (socket) {
 
             printlog(getTime()+'Match '+rand+": "+temp.id+" with "+socket.id);
 
-            temp.emit('start', 0, rand);
-            socket.emit('start', 1, rand);
+            data=room.data
+            temp.emit('start', data, rand);
+            var data2=[data[0],data[1],1-data[2]];
+            socket.emit('start', data2, rand);
             printlog(getTime()+rand+" start!");
 
             var curr = pencil.adapter.rooms[rand];
@@ -82,8 +85,6 @@ pencil.on('connection', function (socket) {
             curr.first = temp.id;
             curr.second = socket.id;
             curr.board = [];
-            for (var i=0;i<169;i++) curr.board.push(0);
-            curr.pos = [];
 
             return;
         }
@@ -91,9 +92,9 @@ pencil.on('connection', function (socket) {
         socket.join('waiting');
     }
 
-    socket.on('join', function (id) {
+    socket.on('join', function (id, data) { // data [xsize,ysize,playerId]
         if (id == 0) {
-            wait(socket);
+            wait(socket, data);
             return;
         }
         var room = pencil.adapter.rooms[id];
@@ -102,7 +103,7 @@ pencil.on('connection', function (socket) {
             printlog(getTime()+id+" visitor: "+socket.id);
             socket.join(id);
             pencil.in(id).emit('msg', ["目前观战人数："+(room.length-2), 2]);
-            socket.emit('start', -1, id, room.board.join(""), room.pos);
+            socket.emit('start', -1, id, room.board);
             return;
         }
         var first = null;
@@ -119,8 +120,6 @@ pencil.on('connection', function (socket) {
             room.first = first.id;
             room.second = socket.id;
             room.board = [];
-            for (var i=0;i<169;i++) room.board.push(0);
-            room.pos = [];
         }
     });
 
@@ -137,9 +136,7 @@ pencil.on('connection', function (socket) {
             delete room.count;
             pencil.in(id).emit('ready');
             room.board = [];
-            for (var i=0;i<169;i++) room.board.push(0);
-            room.pos = [];
-            pencil.in(id).emit('board', room.board.join(""), room.pos);
+            pencil.in(id).emit('board', room.board);
         }
     })
 
@@ -148,11 +145,9 @@ pencil.on('connection', function (socket) {
         pencil.in(id).emit('put', data);
 
         var room = pencil.adapter.rooms[id];
-        if (!isset(room) || !isset(room.board) || !isset(room.pos)) return;
-        var x = data[0], y = data[1];
-        room.board[13*x+y] = data[2];
-        room.pos = [x,y];
-        pencil.in(id).emit('board', room.board.join(""), room.pos);
+        if (!isset(room) || !isset(room.board)) return;
+        room.board.push(data);
+        pencil.in(id).emit('board', room.board);
     })
 
     socket.on('msg', function (id, data) {

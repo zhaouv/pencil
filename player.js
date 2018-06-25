@@ -4,16 +4,18 @@ GamePlayer=function(){}
 GamePlayer.prototype.bind=function(playerId,callback){
     this.playerId=playerId
     this.player=this.game.player[playerId]
-    var AI=this;
+    this.player.pointer=this
+    var AI=this
     this.player.changeTurn=function(callback){return AI.changeTurn(callback)}
     this.player.continueTurn=function(callback){return AI.continueTurn(callback)}
-    if(this.game.playerId===playerId)this.changeTurn(callback);
+    if(this.game.playerId===playerId && !this.game.lock)this.changeTurn(callback);
     return this
 }
 GamePlayer.prototype.remove=function(){
     var game=this.game
     this.player.changeTurn=function(callback){game.lock=0}
     this.player.continueTurn=function(callback){}
+    this.player.pointer=null
     if(game.playerId===this.playerId)game.lock=0;
 }
 GamePlayer.prototype.init=function(game){
@@ -67,19 +69,36 @@ NetworkPlayer.prototype.bind=function(playerId,callback){
     this.game.lock=1
     this.initSocket()
     var thisplayer = this
-    this.sendPutFunc=function(x,y){
+    thisplayer.emitPut=function(x,y){
         if(thisplayer.game.playerId===thisplayer.playerId)return;
         thisplayer.socket.emit('put', thisplayer.room, [x,y,thisplayer.playerId]);
     }
-    this.game.changeEdge.push(this.sendPutFunc)
+    thisplayer.restart=function(){
+        //交换先后手
+        var p2=thisplayer.game.player.pop()
+        p2.pointer.playerId=p2.id=0
+        var p1=thisplayer.game.player.pop()
+        p1.pointer.playerId=p1.id=1
+        thisplayer.game.player.push(p2)
+        thisplayer.game.player.push(p1)
+        thisplayer.socket.emit('ready', thisplayer.room)
+    }
+    this.game.changeEdge.push(thisplayer.emitPut)
+    if(this.gameview){
+        while(this.game.win.length>2)this.game.win.pop();
+    }
+    this.game.win.push(thisplayer.restart)
     this.connect()
     return this
 }
 NetworkPlayer.prototype.remove=function(){
     new GamePlayer().remove.call(this)
-    var index = this.game.changeEdge.indexOf(this.sendPutFunc)
+    var index = this.game.changeEdge.indexOf(this.emitPut)
     this.game.changeEdge.splice(index,1)
-    this.sendPutFunc=null
+    this.emitPut=null
+    var index = this.game.changeEdge.indexOf(this.restart)
+    this.game.win.splice(index,1)
+    this.restart=null
     this.socket.close()
 }
 
@@ -95,7 +114,7 @@ NetworkPlayer.prototype.initSocket=function(){
     this.socket=socket
     var thisplayer = this
     var printtip = thisplayer.printtip
-    var updateBoard = function(board, pos){}
+    var updateBoard = function(board){}
     var endgame = function(){}
     var put_down = function(x, y, type){
         thisplayer.game.lock=0
@@ -103,24 +122,39 @@ NetworkPlayer.prototype.initSocket=function(){
     }
 
     // start game
-    socket.on('start', function(data, room, board, pos) {
-        // thisplayer.playerId=data //先后手
+    socket.on('start', function(data, room, board) { // data [xsize,ysize,playerId]
+        if(data[2]==-1)thisplayer.playerId=-1;
         thisplayer.room=room
-        if (data>=0) {
-            printtip("连接中！\n你当前"+(data==0?"先手":"后手")+"。")
-            // core.resetMap() // todo
+        if (data[2]>=0) {
+            thisplayer.game.setSize(data[0],data[1])
+            // thisplayer.playerId=data 
+            if(data[2]!==thisplayer.playerId){//交换先后手
+                var p2=thisplayer.game.player.pop()
+                p2.pointer.playerId=p2.id=0
+                var p1=thisplayer.game.player.pop()
+                p1.pointer.playerId=p1.id=1
+                thisplayer.game.player.push(p2)
+                thisplayer.game.player.push(p1)
+            }
+            printtip("连接中！\n你当前"+(data[2]==1?"先手":"后手")+"。")
             thisplayer.socket.emit('ready', thisplayer.room)
         } else {
             printtip("观战模式")
-            updateBoard(board, pos)
+            updateBoard(board)
         }
     })
 
     socket.on('ready', function() {
+        // core.resetMap()
+        thisplayer.game.initMap()
+        thisplayer.game.player.forEach(function(pp){
+            pp.score=0
+            if(pp.reset)pp.reset();
+        })
+        if(thisplayer.gameview)thisplayer.gameview.buildTable();
         if (thisplayer.playerId>=0) {
-            thisplayer.game.lock=thisplayer.playerId==1?0:1
-            printtip("开始游戏！\n你当前"+(thisplayer.playerId==0?"先手":"后手")+"。")
-            thisplayer.ready()
+            printtip("开始游戏！\n你当前"+(thisplayer.playerId==1?"先手":"后手")+"。")
+            thisplayer.ready() //thisplayer.game.lock=thisplayer.playerId==1?0:1
         }
     })
 
@@ -141,18 +175,21 @@ NetworkPlayer.prototype.initSocket=function(){
         }
     })
 
-    socket.on('board', function (board, pos) {
+    socket.on('board', function (board) {
         if (thisplayer.playerId==-1) {
-            updateBoard(board, pos);
+            updateBoard(board);
         }
     })
 }
 NetworkPlayer.prototype.connect=function(){
-    this.socket.emit('join', 0); // getinput -> room, 0 for rand match
+    this.socket.emit('join', 0, [this.game.xsize, this.game.ysize, this.playerId]); // getinput -> room, 0 for rand match
     var printtip = this.printtip
     printtip("正在等待其他玩家加入，请稍后...")
 }
-NetworkPlayer.prototype.ready=function(){}
+NetworkPlayer.prototype.ready=function(){
+    this.game.player[0].changeTurn()
+}
+
 ////////////////// GreedyRandomAI //////////////////
 GreedyRandomAI=function(){
     GamePlayer.call(this)

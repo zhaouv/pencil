@@ -25,6 +25,12 @@ Game.prototype.initMap=function(){
     }
     game.history=[]
 }
+Game.prototype.setSize=function(xsize,ysize){
+    var game=this
+    if(xsize)game.xsize=xsize;
+    if(ysize)game.ysize=ysize;
+    game.initMap()
+}
 Game.prototype.xy=function(x,y,value){
     var game=this
     if(x<0||x>2*game.xsize)return 'out range';
@@ -42,6 +48,7 @@ Game.prototype.initPlayer=function(){
             id:ii,
             changeTurn:function(callback){game.lock=0},
             continueTurn:function(callback){},
+            pointer:null,
         })
     }
 }
@@ -59,6 +66,7 @@ Game.prototype.putxy=function(x,y,callback){
     }
     game.xy(x,y,game.EDGE_USED)
     game.history.push([x,y,game.playerId])
+    console.log([x,y,game.playerId])
     // game.changeEdge
     game.changeEdge.forEach(function(f){f(x,y)})
     var directions=[{x:-1,y:0},{x:1,y:0},{x:0,y:-1},{x:0,y:1}]
@@ -97,10 +105,8 @@ Game.prototype.putxy=function(x,y,callback){
 }
 Game.prototype.init=function(xsize,ysize){
     var game=this
-    if(xsize)game.xsize=xsize;
-    if(ysize)game.ysize=ysize;
     game.lock=0
-    game.initMap()
+    game.setSize(xsize,ysize)
     game.initPlayer()
     
     game.changeEdge=[]//function(x,y){}
@@ -136,7 +142,7 @@ gameview.xy=function(x,y){return gameview.gamemap.children[y].children[x]}
 gameview.printtip=function(tip){
     gameview.gametip.innerText=tip
 }
-gameview.listen=function(){
+gameview.listenTable=function(){
     var game=gameview.game
     for(var jj=0;jj<2*game.ysize+1;jj++){
         for(var ii=0;ii<2*game.xsize+1;ii++){
@@ -148,7 +154,13 @@ gameview.listen=function(){
             })(ii,jj)
         }
     }
-
+}
+gameview.buildTable=function(){
+    gameview.initTable()
+    gameview.listenTable()
+}
+gameview.listenGame=function(){
+    var game=gameview.game
     var lastedge = null
     game.changeEdge.push(function(x,y){
         if(lastedge)gameview.xy(lastedge[0],lastedge[1]).children[0].style.background='#ccc'
@@ -167,6 +179,8 @@ gameview.listen=function(){
     })
     game.win.push(function(playerId){
         gameview.gameinfo.children[playerId].children[0].children[1].innerHTML='win'
+    })
+    game.win.push(function(playerId){
         setTimeout(function(){
             var replay=confirm((playerId==0?'先手玩家':'后手玩家')+' win, replay?')
             if(replay)resetgame(first2);
@@ -193,8 +207,8 @@ gameview.init=function(game,hasInited){
     } else {
         game.init(~~gameview.x.value,~~gameview.y.value)
     }
-    gameview.initTable()
-    gameview.listen()
+    gameview.buildTable()
+    gameview.listenGame()
     return gameview
 }
 
