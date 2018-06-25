@@ -127,8 +127,23 @@ NetworkPlayer.prototype.initSocket=function(){
     this.socket=socket
     var thisplayer = this
     var printtip = thisplayer.printtip
-    var updateBoard = function(board){}
-    var endgame = function(){}
+    var updateBoard = function(board){
+        thisplayer.game.history=board
+        if(thisplayer.gameview){
+            game=new ReplayController().init(thisplayer.game,thisplayer.gameview).replay(null,0,function(newgame,gameview){
+                newgame.lock=0
+                var player1 = new LocalPlayer().init(newgame,gameview).bind(0)
+                var player2 = new LocalPlayer().init(newgame,gameview).bind(1)
+                newgame.win=[]
+                newgame.firstStep()
+            })
+            game.win=[]
+            game.firstStep()
+        }
+    }
+    var endgame = function(){
+        thisplayer.remove()
+    }
     var put_down = function(x, y, type){
         thisplayer.game.lock=0
         thisplayer.game.putxy(x,y)
@@ -136,7 +151,10 @@ NetworkPlayer.prototype.initSocket=function(){
 
     // start game
     socket.on('start', function(data, room, board) { // data [xsize,ysize,playerId]
-        if(data[2]==-1)thisplayer.playerId=-1;
+        if(data[2]==-1){
+            thisplayer.playerId=-1
+            thisplayer.game.setSize(data[0],data[1])
+        }
         thisplayer.room=room
         if (data[2]>=0) {
             setTimeout(function(){

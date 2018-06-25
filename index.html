@@ -253,6 +253,7 @@
     <span>重新开始: </span>
     <input type="button" value="先手" onclick="resetgame(1)">
     <input type="button" value="后手" onclick="resetgame()">
+    <span>room: </span><input type="text" id="roomnum" style="width:4em;" onchange="setroom(~~roomnum.value)" value="0">
     <br>
     <input type="text" id="gx" value="5">
     <br>
@@ -267,7 +268,7 @@
 <script>
 document.getElementsByClassName('middletop')[0].style.marginTop=~~(innerHeight/10)+'px';
 </script>
-
+<script src="./socket.io/socket.io.js"></script>
 <script src="./game.js"></script>
 <script src="./player.js"></script>
 <script>
@@ -299,17 +300,26 @@ resetgame(1)
 
 ////////////////// laststep //////////////////
 laststep=function(){
-    var gamea=JSON.parse( JSON.stringify(gameview.game))
-    var game=new ReplayController().init(gamea,gameview).replay('last',0,function(newgame,gameview){
+    gameview.game=new ReplayController().init(gameview.game,gameview).replay('last',0,function(newgame,gameview){
         //changePlayerSelect.value=2
         //playerIndex=~~changePlayerSelect.value
-        game.lock=0
+        newgame.lock=0
         player1 = new LocalPlayer().init(newgame,gameview).bind(1-first2)
-        player2 = new playerList[playerIndex]().init(game,gameview).bind(first2)
-        game.firstStep()
-    })
+        player2 = new playerList[playerIndex]().init(newgame,gameview).bind(first2)
+        newgame.firstStep()
+    }).firstStep()
 }
+
+////////////////// setroom //////////////////
+setroom=function(num){
+    num=num||0
+    NetworkPlayer.prototype.queryRoom=function(){
+        // getinput -> room, 0 for rand match
+        this.room=num
+    }
+}
+
+// player1 = new playerList[0]().init(gameview.game,gameview).bind(1-first2)
 </script>
-<script src="./socket.io/socket.io.js"></script>
 </body>
 </html>

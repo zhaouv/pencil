@@ -64,8 +64,15 @@ var server = http.createServer(function (request, response) {
 /* server.listen(5050, function () {
     printlog(getTime()+'Starting server on port 5050');
 }); */
+setroom=function(num){
+    num=num||0
+    NetworkPlayer.prototype.queryRoom=function(){
+        // getinput -> room, 0 for rand match
+        this.room=num
+    }
+}
+setroom(100)
 
-console.log(Game)
 first1=0
 game = new Game().init(5,5)
 player1 = new OffensiveKeeperAI().init(game).bind(first1)

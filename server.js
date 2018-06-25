@@ -103,7 +103,9 @@ pencil.on('connection', function (socket) {
             printlog(getTime()+id+" visitor: "+socket.id);
             socket.join(id);
             pencil.in(id).emit('msg', ["目前观战人数："+(room.length-2), 2]);
-            socket.emit('start', -1, id, room.board);
+            data=room.data
+            var data3=[data[0],data[1],-1];
+            socket.emit('start', data3, id, room.board);
             return;
         }
         var first = null;
@@ -111,11 +113,16 @@ pencil.on('connection', function (socket) {
             first = pencil.connected[Object.keys(room.sockets)[0]];
         }
         socket.join(id);
+        if (!isset(room)){
+            pencil.adapter.rooms[id].data=data
+        }
         printlog(getTime()+id+" player: "+socket.id);
         if (isset(first)) {
             room = pencil.adapter.rooms[id];
-            first.emit('start', 0, id);
-            socket.emit('start', 1, id);
+            data=room.data
+            first.emit('start', data, id);
+            var data2=[data[0],data[1],1-data[2]];
+            socket.emit('start', data2, id);
             printlog(getTime()+id+" start!");
             room.first = first.id;
             room.second = socket.id;

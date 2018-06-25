@@ -55,6 +55,7 @@ Game.prototype.initPlayer=function(){
 Game.prototype.firstStep=function(callback){
     var game=this
     game.player[game.playerId].changeTurn(callback)
+    return game
 }
 
 Game.prototype.putxy=function(x,y,callback){
@@ -270,6 +271,7 @@ ReplayController.prototype.replay=function(step,time,callback){
                     newgame.lock=0
                     player2 = new LocalPlayer().init(newgame,rc.gameview).bind(1)
                     player1 = new LocalPlayer().init(newgame,rc.gameview).bind(0)
+                    newgame.firstStep()
                 }
             }
         }
@@ -283,7 +285,8 @@ ReplayController.prototype.replay=function(step,time,callback){
     rc.player2.changeTurn=rc.player2.continueTurn=stepfunc
     rc.player2.bind(1)
     rc.player1.bind(0)
+    //newgame.firstStep()
     
     return newgame
 }
-//gamea=JSON.parse( JSON.stringify(game));game=new ReplayController().init(gamea,gameview).replay('last',120,null)
+//gamea=JSON.parse( JSON.stringify(game));game=new ReplayController().init(gamea,gameview).replay('last',120,null).firstStep()
