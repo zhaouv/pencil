@@ -68,8 +68,12 @@ var server = http.createServer(function (request, response) {
 console.log(Game)
 first1=0
 game = new Game().init(5,5)
-player2 = new NetworkPlayer().init(game)
-player2.ready=function(){player1 = new OffensiveKeeperAI().init(game).bind(first1)}
-player2.bind(1-first1)
+player1 = new OffensiveKeeperAI().init(game).bind(first1)
+player2 = new NetworkPlayer().init(game).bind(1-first1)
 
+/* 
+player2 = new playerList[3]().init(gameview.game,gameview)
+player2.queryRoom=function(){this.room=176460131}
+player2.bind(first2)
+*/
 console.log('end')

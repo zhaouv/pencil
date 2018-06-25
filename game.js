@@ -52,7 +52,10 @@ Game.prototype.initPlayer=function(){
         })
     }
 }
-
+Game.prototype.firstStep=function(callback){
+    var game=this
+    game.player[game.playerId].changeTurn(callback)
+}
 
 Game.prototype.putxy=function(x,y,callback){
     var game=this
@@ -66,7 +69,6 @@ Game.prototype.putxy=function(x,y,callback){
     }
     game.xy(x,y,game.EDGE_USED)
     game.history.push([x,y,game.playerId])
-    console.log([x,y,game.playerId])
     // game.changeEdge
     game.changeEdge.forEach(function(f){f(x,y)})
     var directions=[{x:-1,y:0},{x:1,y:0},{x:0,y:-1},{x:0,y:1}]
@@ -105,7 +107,7 @@ Game.prototype.putxy=function(x,y,callback){
 }
 Game.prototype.init=function(xsize,ysize){
     var game=this
-    game.lock=0
+    game.lock=1
     game.setSize(xsize,ysize)
     game.initPlayer()
     
@@ -143,17 +145,19 @@ gameview.printtip=function(tip){
     gameview.gametip.innerText=tip
 }
 gameview.listenTable=function(){
-    var game=gameview.game
-    for(var jj=0;jj<2*game.ysize+1;jj++){
-        for(var ii=0;ii<2*game.xsize+1;ii++){
-            if((ii+jj)%2===0)continue;
-            (function(ii,jj){
-                gameview.xy(ii,jj).children[0].onclick=function(){
-                    game.putxy(ii,jj)
-                }
-            })(ii,jj)
+    setTimeout(function(){
+        var game=gameview.game
+        for(var jj=0;jj<2*game.ysize+1;jj++){
+            for(var ii=0;ii<2*game.xsize+1;ii++){
+                if((ii+jj)%2===0)continue;
+                (function(ii,jj){
+                    gameview.xy(ii,jj).children[0].onclick=function(){
+                        game.putxy(ii,jj)
+                    }
+                })(ii,jj)
+            }
         }
-    }
+    },100)
 }
 gameview.buildTable=function(){
     gameview.initTable()
@@ -246,7 +250,7 @@ ReplayController.prototype.replay=function(step,time,callback){
     rc.player1 = new LocalPlayer().init(newgame,rc.gameview)
     rc.player2 = new LocalPlayer().init(newgame,rc.gameview)
     if(rc.gameview){
-        game=newgame
+        var game=newgame
         rc.gameview.init(game,'hasInited')
     }
     var stepfunc=function(cb){
@@ -263,6 +267,7 @@ ReplayController.prototype.replay=function(step,time,callback){
                 if(callback){
                     callback(newgame,rc.gameview)
                 } else {
+                    newgame.lock=0
                     player2 = new LocalPlayer().init(newgame,rc.gameview).bind(1)
                     player1 = new LocalPlayer().init(newgame,rc.gameview).bind(0)
                 }

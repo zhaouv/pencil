@@ -8,7 +8,7 @@ GamePlayer.prototype.bind=function(playerId,callback){
     var AI=this
     this.player.changeTurn=function(callback){return AI.changeTurn(callback)}
     this.player.continueTurn=function(callback){return AI.continueTurn(callback)}
-    if(this.game.playerId===playerId && !this.game.lock)this.changeTurn(callback);
+    //if(this.game.playerId===playerId && !this.game.lock)this.changeTurn(callback);
     return this
 }
 GamePlayer.prototype.remove=function(){
@@ -67,28 +67,37 @@ NetworkPlayer.prototype.init=function(game,gameview){
 NetworkPlayer.prototype.bind=function(playerId,callback){
     new GamePlayer().bind.call(this,playerId,callback)
     this.game.lock=1
-    this.initSocket()
     var thisplayer = this
     thisplayer.emitPut=function(x,y){
         if(thisplayer.game.playerId===thisplayer.playerId)return;
         thisplayer.socket.emit('put', thisplayer.room, [x,y,thisplayer.playerId]);
     }
     thisplayer.restart=function(){
-        //交换先后手
-        var p2=thisplayer.game.player.pop()
-        p2.pointer.playerId=p2.id=0
-        var p1=thisplayer.game.player.pop()
-        p1.pointer.playerId=p1.id=1
-        thisplayer.game.player.push(p2)
-        thisplayer.game.player.push(p1)
-        thisplayer.socket.emit('ready', thisplayer.room)
+        //重置游戏并交换先后手
+        setTimeout(function(){
+            var newgame = new Game().init(thisplayer.game.xsize,thisplayer.game.ysize)
+            if(thisplayer.gameview){
+                var game=newgame
+                thisplayer.gameview.init(game,'hasInited')
+            }
+            var p1=thisplayer.game.player[1].pointer
+            var p2=thisplayer.game.player[0].pointer
+            p2.init(newgame,thisplayer.gameview).bind(1)
+            p1.init(newgame,thisplayer.gameview).bind(0)
+
+            thisplayer.socket.emit('ready', thisplayer.room)
+        },1000)
     }
     this.game.changeEdge.push(thisplayer.emitPut)
     if(this.gameview){
         while(this.game.win.length>2)this.game.win.pop();
     }
     this.game.win.push(thisplayer.restart)
-    this.connect()
+    if(!this.room){
+        this.queryRoom()
+        this.initSocket()
+        this.connect()
+    }
     return this
 }
 NetworkPlayer.prototype.remove=function(){
@@ -102,6 +111,10 @@ NetworkPlayer.prototype.remove=function(){
     this.socket.close()
 }
 
+NetworkPlayer.prototype.queryRoom=function(){
+    // getinput -> room, 0 for rand match
+    this.room=0
+}
 NetworkPlayer.prototype.printtip=function(tip){
     console.log(tip)
     if(this.gameview&&this.gameview.gametip){
@@ -126,18 +139,26 @@ NetworkPlayer.prototype.initSocket=function(){
         if(data[2]==-1)thisplayer.playerId=-1;
         thisplayer.room=room
         if (data[2]>=0) {
-            thisplayer.game.setSize(data[0],data[1])
-            // thisplayer.playerId=data 
-            if(data[2]!==thisplayer.playerId){//交换先后手
-                var p2=thisplayer.game.player.pop()
-                p2.pointer.playerId=p2.id=0
-                var p1=thisplayer.game.player.pop()
-                p1.pointer.playerId=p1.id=1
-                thisplayer.game.player.push(p2)
-                thisplayer.game.player.push(p1)
-            }
-            printtip("连接中！\n你当前"+(data[2]==1?"先手":"后手")+"。")
-            thisplayer.socket.emit('ready', thisplayer.room)
+            setTimeout(function(){
+                //重置游戏
+                var newgame = new Game().init(data[0],data[1])
+                if(thisplayer.gameview){
+                    var game=newgame
+                    thisplayer.gameview.init(game,'hasInited')
+                }
+                var p1=thisplayer.game.player[0].pointer
+                var p2=thisplayer.game.player[1].pointer
+                if(data[2]!==thisplayer.playerId){ //交换先后手
+                    p1.init(newgame,thisplayer.gameview).bind(1)
+                    p2.init(newgame,thisplayer.gameview).bind(0)
+                } else {
+                    p1.init(newgame,thisplayer.gameview).bind(0)
+                    p2.init(newgame,thisplayer.gameview).bind(1)
+                }
+                
+                printtip("连接中！\n你当前"+(data[2]==1?"先手":"后手")+"。")
+                thisplayer.socket.emit('ready', thisplayer.room)
+            },1000)
         } else {
             printtip("观战模式")
             updateBoard(board)
@@ -145,13 +166,6 @@ NetworkPlayer.prototype.initSocket=function(){
     })
 
     socket.on('ready', function() {
-        // core.resetMap()
-        thisplayer.game.initMap()
-        thisplayer.game.player.forEach(function(pp){
-            pp.score=0
-            if(pp.reset)pp.reset();
-        })
-        if(thisplayer.gameview)thisplayer.gameview.buildTable();
         if (thisplayer.playerId>=0) {
             printtip("开始游戏！\n你当前"+(thisplayer.playerId==1?"先手":"后手")+"。")
             thisplayer.ready() //thisplayer.game.lock=thisplayer.playerId==1?0:1
@@ -182,7 +196,7 @@ NetworkPlayer.prototype.initSocket=function(){
     })
 }
 NetworkPlayer.prototype.connect=function(){
-    this.socket.emit('join', 0, [this.game.xsize, this.game.ysize, this.playerId]); // getinput -> room, 0 for rand match
+    this.socket.emit('join', this.room, [this.game.xsize, this.game.ysize, this.playerId]); // getinput -> room, 0 for rand match
     var printtip = this.printtip
     printtip("正在等待其他玩家加入，请稍后...")
 }

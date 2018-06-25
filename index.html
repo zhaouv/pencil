@@ -279,7 +279,9 @@ changePlayerSelect.onchange=function(){
     if(playerIndex===3 &&　window.location.href.indexOf(':5050')===-1)window.location='http://zhaouv.top/pencilnetwork';
     laststepbutton.style.display=playerIndex===3?'none':''
     player2.remove()
+    var game=gameview.game
     player2 = new playerList[playerIndex]().init(game,gameview).bind(first2)
+    game.firstStep()
 }
 
 ////////////////// resetgame //////////////////
@@ -287,21 +289,24 @@ playerList = [OffensiveKeeperAI,GreedyRandomAI,LocalPlayer,NetworkPlayer]
 playerIndex=~~changePlayerSelect.value
 function resetgame(_first2){
     first2=_first2?1:0; // 此处的first2是player2的先后手, 先手对应的是0
-    game = new Game()
+    var game = new Game()
     gameview.init(game)
     player1 = new LocalPlayer().init(game,gameview).bind(1-first2)
     player2 = new playerList[playerIndex]().init(game,gameview).bind(first2)
+    game.firstStep()
 }
 resetgame(1)
 
 ////////////////// laststep //////////////////
 laststep=function(){
-    var gamea=JSON.parse( JSON.stringify(game))
-    game=new ReplayController().init(gamea,gameview).replay('last',0,function(newgame,gameview){
+    var gamea=JSON.parse( JSON.stringify(gameview.game))
+    var game=new ReplayController().init(gamea,gameview).replay('last',0,function(newgame,gameview){
         //changePlayerSelect.value=2
         //playerIndex=~~changePlayerSelect.value
+        game.lock=0
         player1 = new LocalPlayer().init(newgame,gameview).bind(1-first2)
         player2 = new playerList[playerIndex]().init(game,gameview).bind(first2)
+        game.firstStep()
     })
 }
 </script>
