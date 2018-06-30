@@ -79,7 +79,7 @@ player1 = new OffensiveKeeperAI().init(game).bind(first1)
 player2 = new NetworkPlayer().init(game).bind(1-first1)
 
 /* 
-player2 = new playerList[3]().init(gameview.game,gameview)
+player2 = new NetworkPlayer().init(gameview.game,gameview)
 player2.queryRoom=function(){this.room=176460131}
 player2.bind(first2)
 */

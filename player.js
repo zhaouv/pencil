@@ -383,7 +383,7 @@ GreedyRandomAI.prototype.where=function(){
     else {number = 100} //需让分
     //
     if(number!==100){
-        if(number===1 && !this.edgeCount[10]){var where = this.tryKeepOffensive()}
+        if(number===1 && this.edgeCount[10]===0){var where = this.tryKeepOffensive()}
         else {var where = this.getRandWhere(number)}
     } else {
         var where = this.minConnectedRegion()
