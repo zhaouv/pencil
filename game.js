@@ -91,7 +91,7 @@ Game.prototype.putxy=function(x,y,callback){
                 if(game.player[game.playerId].score>=game.winScore){
                     game.win.forEach(function(f){f(game.playerId)})
                     if(callback)callback('win',null);
-                    return 'win'
+                    return 'win'+game.playerId
                 }
             }
         }

@@ -2,8 +2,6 @@ var socketIO = require('socket.io');
 
 var http = require('http');
 
-console.log('Static root dir: ' + root);
-
 var server = http.createServer();
 
 var io = socketIO(server);
