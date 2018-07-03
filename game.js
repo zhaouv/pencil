@@ -199,6 +199,11 @@ gameview.init=function(game,hasInited){
     gameview.x = document.getElementById('gx')
     gameview.y = document.getElementById('gy')
 
+    var ss = window.location.search
+    if(ss.indexOf('url=')!==-1){
+        gameview.urlstr=ss.split('url=')[1].split('&')[0]
+    }
+
     gameview.gameinfo.children[0].style.background=gameview.playerColor[0]
     gameview.gameinfo.children[1].style.background=''
     gameview.gameinfo.children[0].children[0].children[0].innerHTML='0'

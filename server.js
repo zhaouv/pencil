@@ -9,21 +9,7 @@ var root = path.resolve('.');
 
 console.log('Static root dir: ' + root);
 
-var server = http.createServer(function (request, response) {
-    var pathname = url.parse(request.url).pathname;
-    var filepath = path.join(root, pathname);
-    fs.stat(filepath, function (err, stats) {
-        if (!err && stats.isFile()) {
-            console.log(getTime()+'200 ' + request.url);
-            response.writeHead(200);
-            fs.createReadStream(filepath).pipe(response);
-        } else {
-            console.log(getTime()+'404 ' + request.url);
-            response.writeHead(404);
-            response.end('404 Not Found');
-        }
-    });
-});
+var server = http.createServer();
 
 var io = socketIO(server);
 var printlog = console.log;

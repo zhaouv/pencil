@@ -123,7 +123,9 @@ NetworkPlayer.prototype.printtip=function(tip){
 }
 
 NetworkPlayer.prototype.initSocket=function(){
-    var socket = io(':5050/pencil')
+    urlstr='http://pppl.pw:5050/pencil'
+    if(this.gameview && this.gameview.urlstr)urlstr=this.gameview.urlstr;
+    var socket = io(urlstr)
     this.socket=socket
     var thisplayer = this
     var printtip = thisplayer.printtip
