@@ -1,11 +1,6 @@
 var socketIO = require('socket.io');
-var fs = require('fs');
+
 var http = require('http');
-
-var url = require('url');
-var path = require('path');
-
-var root = path.resolve('.');
 
 console.log('Static root dir: ' + root);
 
