@@ -123,7 +123,8 @@ NetworkPlayer.prototype.printtip=function(tip){
 }
 
 NetworkPlayer.prototype.initSocket=function(){
-    urlstr='https://h5mota.com:5050/pencil'
+    var urlstr=':5050/pencil'
+    // http://pencilonline.top/index.html?url=https://h5mota.com:5050/pencil
     if(this.gameview && this.gameview.urlstr)urlstr=this.gameview.urlstr;
     var socket = io(urlstr)
     this.socket=socket
