@@ -14,7 +14,7 @@ def gethistory():
 
 def getmap():
     return json.loads(wget('map'))
-    # List2d
+    # List2d[y][x]
     
     # Game.prototype.POINT=1
     # Game.prototype.EDGE=0
