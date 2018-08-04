@@ -5,10 +5,9 @@ var http = require('http');
 var server = http.createServer();
 
 var io = socketIO(server);
-var printlog = console.log;
 
 server.listen(5050, function () {
-    printlog(getTime()+'Starting server on port 5050');
+    console.log(getTime()+'Starting server on port 5050');
 });
 
 var isset = function (t) {
@@ -28,7 +27,7 @@ var getTime = function() {
 
 const pencil = io.of('/pencil');
 pencil.on('connection', function (socket) {
-
+    var printlog = console.log;
     var wait = function (socket, data) { // data [xsize,ysize,playerId]
         if (!isset(pencil.adapter.rooms['waiting'])) {
             printlog(getTime()+'Waiting '+socket.id);

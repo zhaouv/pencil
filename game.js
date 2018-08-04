@@ -2,6 +2,7 @@
 Game=function(){
     this.xsize=6
     this.ysize=6
+    this.endImmediately=true
 }
 
 Game.prototype.POINT=1
@@ -89,9 +90,18 @@ Game.prototype.putxy=function(x,y,callback){
                 // game.changeScore
                 game.changeScore.forEach(function(f){f(xx,yy,game.playerId,game.player[game.playerId].score)})
                 if(game.player[game.playerId].score>=game.winScore){
-                    game.win.forEach(function(f){f(game.playerId)})
-                    if(callback)callback('win',null);
-                    return 'win'+game.playerId
+                    var endnow=true
+                    if(game.winnerId==null){
+                        game.winnerId=game.playerId
+                    }
+                    if(!game.endImmediately){
+                        endnow=(game.player[0].score+game.player[0].score==game.ysize*game.xsize)
+                    }
+                    if(endnow){
+                        game.win.forEach(function(f){f(game.winnerId)})
+                        if(callback)callback('win',null);
+                        return 'win'+game.winnerId
+                    }
                 }
             }
         }
@@ -111,6 +121,7 @@ Game.prototype.init=function(xsize,ysize){
     game.lock=1
     game.setSize(xsize,ysize)
     game.initPlayer()
+    game.winnerId=null
     
     game.changeEdge=[]//function(x,y){}
     game.changeScore=[]//function(x,y,playerId,score){}
