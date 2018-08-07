@@ -245,7 +245,7 @@
     <span>对手: </span>
     <select id="changePlayerSelect">
         <option value="0">中等AI</option>
-        <option value="1">简单AI</option>
+        <!-- <option value="1">简单AI</option> -->
         <option value="2">左右互搏</option>
         <option value="3">网络对战</option>
     </select>
@@ -271,7 +271,9 @@ document.getElementsByClassName('middletop')[0].style.marginTop=~~(innerHeight/1
 </script>
 <script src="./socket.io/socket.io.js"></script>
 <script src="./game.js"></script>
+<script src="./gamedata.js"></script>
 <script src="./player.js"></script>
+<script src="./treeSearch.js"></script>
 <script>
 ////////////////// changePlayerSelect //////////////////
 var changePlayerSelect = document.getElementById('changePlayerSelect')

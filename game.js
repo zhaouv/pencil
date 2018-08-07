@@ -73,7 +73,7 @@ Game.prototype.putxy=function(x,y,callback){
     game.history.push([x,y,game.playerId])
     // game.changeEdge
     game.changeEdge.forEach(function(f){f(x,y)})
-    var directions=[{x:-1,y:0},{x:1,y:0},{x:0,y:-1},{x:0,y:1}]
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
     var score=false
     for(var ii=0,d;d=directions[ii];ii++){
         var xx=x+d.x, yy=y+d.y
@@ -100,7 +100,7 @@ Game.prototype.putxy=function(x,y,callback){
                     if(endnow){
                         game.win.forEach(function(f){f(game.winnerId)})
                         if(callback)callback('win',null);
-                        return 'win'+game.winnerId
+                        return 'win'
                     }
                 }
             }

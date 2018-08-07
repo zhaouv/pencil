@@ -2,7 +2,10 @@ var socketClient = require('socket.io-client')
 io = function(){return socketClient('http://localhost:5050/pencil')}
 
 require('./game.js')
+require('./gamedata.js')
 require('./player.js')
+require('./treeSearch.js')
+
 
 var printlog = console.log;
 

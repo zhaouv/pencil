@@ -5,9 +5,9 @@ GamePlayer.prototype.bind=function(playerId,callback){
     this.playerId=playerId
     this.player=this.game.player[playerId]
     this.player.pointer=this
-    var AI=this
-    this.player.changeTurn=function(callback){return AI.changeTurn(callback)}
-    this.player.continueTurn=function(callback){return AI.continueTurn(callback)}
+    var thisplayer=this
+    this.player.changeTurn=function(callback){return thisplayer.changeTurn(callback)}
+    this.player.continueTurn=function(callback){return thisplayer.continueTurn(callback)}
     //if(this.game.playerId===playerId && !this.game.lock)this.changeTurn(callback);
     return this
 }
@@ -26,14 +26,14 @@ GamePlayer.prototype.init=function(game){
 GamePlayer.prototype.changeTurn=function(callback){
     //this.game.lock=1
     //计算
-    //this.game.lock=0
+    this.game.lock=0
     //this.game.putxy(x,y)
 }
 
 GamePlayer.prototype.continueTurn=function(callback){
     //this.game.lock=1
     //计算
-    //this.game.lock=0
+    this.game.lock=0
     //this.game.putxy(x,y)
 }
 
@@ -246,7 +246,7 @@ GreedyRandomAI.prototype.xy=function(x,y,value){
 }
 
 GreedyRandomAI.prototype.count=function(x,y,number){
-    var directions=[{x:-1,y:0},{x:1,y:0},{x:0,y:-1},{x:0,y:1}]
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
     var count=0
     var _cmp=function(a,b){return b.indexOf(a)!==-1}
     if(typeof(number)===typeof(1))_cmp=function(a,b){return a===b};
@@ -317,15 +317,15 @@ GreedyRandomAI.prototype.getRandWhere=function(number){
 GreedyRandomAI.prototype.initConnectedRegion=function(){
     var game=this.game
     var visited = eval('['+Array(game.ysize+1).join('['+Array(game.xsize+1).join('false,')+'],')+']') // ysize*xsize的false
-    var AI=this;
+    var thisplayer=this;
     var v=function(x,y,value){
-        if(x<0||x>2*AI.game.xsize)return true;
-        if(y<0||y>2*AI.game.ysize)return true;
-        if(AI.xy(x,y)!==10002 && AI.xy(x,y)!==10003)visited[y>>1][x>>1]=true;
+        if(x<0||x>2*thisplayer.game.xsize)return true;
+        if(y<0||y>2*thisplayer.game.ysize)return true;
+        if(thisplayer.xy(x,y)!==10002 && thisplayer.xy(x,y)!==10003)visited[y>>1][x>>1]=true;
         if(value==null)return visited[y>>1][x>>1];
         visited[y>>1][x>>1]=value
     }
-    var directions=[{x:-1,y:0},{x:1,y:0},{x:0,y:-1},{x:0,y:1}]
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
     this.connectedRegion={}
     this.connectedRegionKeys=[]
     var stack10003 = []
@@ -365,7 +365,7 @@ GreedyRandomAI.prototype.minConnectedRegion=function(){
     var len = Math.min.apply(null,this.connectedRegionKeys)
     var stack = this.connectedRegion[len][0]
     if(len>1)return {'x':(stack[0].x+stack[1].x)/2,'y':(stack[0].y+stack[1].y)/2};
-    var directions=[{x:-1,y:0},{x:1,y:0},{x:0,y:-1},{x:0,y:1}]
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
     for(var ii=0,d;d=directions[ii];ii++){
         var xx=stack[0].x+d.x, yy=stack[0].y+d.y
         if(this.xy(xx,yy)===100)return {'x':xx,'y':yy};
@@ -456,7 +456,7 @@ OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
     }
 
     //让分数拿先手
-    var directions=[{x:-1,y:0},{x:1,y:0},{x:0,y:-1},{x:0,y:1}]
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
     for(var jj=0,pt;pt=stack10003[0][jj];jj++){
         for(var ii=0,d;d=directions[ii];ii++){
             var xx=pt.x+d.x, yy=pt.y+d.y
