@@ -86,7 +86,7 @@ player1 = new OffensiveKeeperAI().
   在x,y处落子  
   会有以下几种返回情况  
   `'lock'`对应游戏未开始或者已经结束, 或者当前是对手的回合  
-  `'Invalid click'`表示改点不是能落子的边  
+  `'Invalid click'`表示该点不是能落子的边  
   `'win0'`表示下完此步导致了先手获胜  
   `'win1'`表示下完此步导致了后手获胜  
   `'continueTurn'`表示下完此步后有得分, 仍是自己继续下  
