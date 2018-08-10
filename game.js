@@ -100,7 +100,7 @@ Game.prototype.putxy=function(x,y,callback){
                     if(endnow){
                         game.win.forEach(function(f){f(game.winnerId)})
                         if(callback)callback('win',null);
-                        return 'win'
+                        return 'win'+game.playerId
                     }
                 }
             }

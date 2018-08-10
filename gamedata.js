@@ -9,6 +9,7 @@ connectedRegion : {}
 edgeCount : {1: 0, 10: 84, 100: 0, -100000: 0}
 endImmediately : true
 map : (13) [Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13)]
+maxIndex : 0
 player : (2) [{…}, {…}]
 playerId : 0
 regionNum : 0
@@ -203,6 +204,7 @@ GameData.prototype.initConnectedRegion=function(){
         }
     }
     game.regionNum=regionNum
+    game.maxIndex=regionNum
     game.area = eval('['+Array(game.ysize+1).join('['+Array(game.xsize+1).join('0,')+'],')+']') // ysize*xsize的0
     for(var index in game.connectedRegion){
         var region=game.connectedRegion[index]
@@ -294,9 +296,12 @@ GameData.prototype.putxy=function(x,y,callback){
         if(scorenow===game.SCORE_1){
             //不需要做任何事
         } else if(scorenow===game.SCORE_2){
-
+            //todo
         } else if(scorenow===game.SCORE_3){
-
+            var index = game.areaxy(xx,yy)
+            var region=game.connectedRegion[index]
+            if(region.isRing && ii<2)continue;
+            //todo
         } else if(scorenow===game.SCORE_4){
             //有图块完成,更新分数
             score=true

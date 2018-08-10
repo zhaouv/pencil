@@ -66,6 +66,10 @@ _斜体部分_ 是不够完善的分析, 利用其中的漏洞可以100%胜率�
 
 目前状态是可运行
 
+## Python API
+
+提供了Python的接入支持 [doc](pythonapi.md)
+
 # Notice
 
 `socket.io/socket.io.js` from [socket.io-client](https://github.com/socketio/socket.io-client/blob/master/dist/socket.io.js) ([LICENSE](socket.io/LICENSE))
