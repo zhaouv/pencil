@@ -34,25 +34,24 @@ class pyAI:
     ...
 
 player=pyAI()
-player.setPlayer(p.myid())
-player.setMap(p.getmap())
-def putxy(x,y):
-    r=p.putxy(x,y)
-    if r in ['win0','win1']:return -1
-    if r == 'continueTurn':return 0
-    if r == 'changeTurn':return 1
-    #'lock','Invalid click'
-    return 2
-player.setPut(putxy)
-while True:
-    if not ismyturn():
-        time.sleep(0.01)
-        continue
-    wincheck=player.update(p.gethistory())
-    if wincheck:break
-    where=player.where()
-    print(where)
-    player.put(where)
+player.setPut(p.putxy)
+winlose=[[0,0],[0,0]]
+number=100
+while number:
+    wincheck=-1
+    player.setPlayer(p.myid())
+    player.setMap(p.getmap())
+    while True:
+        if not ismyturn():
+            time.sleep(0.01)
+            continue
+        wincheck=player.update(p.gethistory())
+        if wincheck!=-1:break
+        where=player.where()
+        print(where)
+        player.put(where)
+    winlose[player.id][wincheck]+=1
+    number-=1
 ```
 
 需要网页版的AI作为对手时, 可以双击localserver.html  
