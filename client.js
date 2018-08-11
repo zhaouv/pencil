@@ -65,8 +65,19 @@ var server = http.createServer(function (request, response) {
     return;
 });
 
-server.listen(5051, function () {
-    printlog(getTime()+'Starting server on port 5051');
+var port = 5051 // 默认检测5051端口
+var room = 100
+var index = process.argv.indexOf('-p')
+if (index !== -1) {
+  port = parseInt(process.argv[index+1])
+}
+index = process.argv.indexOf('-r')
+if (index !== -1) {
+  port = parseInt(process.argv[index+1])
+}
+
+server.listen(port, function () {
+    printlog(getTime()+'Starting server on port '+port);
 });
 
 setroom=function(num){
@@ -76,7 +87,7 @@ setroom=function(num){
         this.room=num
     }
 }
-setroom(100)
+setroom(room)
 
 first1=0
 game = new Game().init(6,6)

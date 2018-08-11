@@ -2,38 +2,41 @@
 import json
 import urllib.request
 
-def wget(url):
-    url='http://localhost:5051/'+url
-    with urllib.request.urlopen(url) as urlf:
-        ss=urlf.read() # ss是字节形式
-    return ss.decode()
+class NetworkGame:
+    def __init__(self,port=5051):
+        self.port=port
 
-def gethistory():
-    return json.loads(wget('history'))
-    # List as [[x,y,id],...]
+    def wget(self,url):
+        url='http://localhost:'+str(self.port)+'/'+url
+        with urllib.request.urlopen(url) as urlf:
+            ss=urlf.read() # ss is byte code
+        return ss.decode()
 
-def getmap():
-    return json.loads(wget('map'))
-    # List2d[y][x]
-    
-    # Game.prototype.POINT=1
-    # Game.prototype.EDGE=0
-    # Game.prototype.SCORE=2
-    # Game.prototype.EDGE_USED=-1
-    # Game.prototype.SCORE_PLAYER=[4,8]
-    
+    def gethistory(self):
+        return json.loads(self.wget('history'))
+        # List as [[x,y,id],...]
 
-def putxy(x,y):
-    return wget('put/{x}-{y}'.format(x=x,y=y))
-    # ['lock','Invalid click','win0','win1','continueTurn','changeTurn']
+    def getmap(self):
+        return json.loads(self.wget('map'))
+        # List2d[y][x]
+        
+    POINT=1
+    EDGE=0
+    SCORE=2
+    EDGE_USED=-1
+    SCORE_PLAYER=[4,8]
+        
+    def putxy(self,x,y):
+        return self.wget('put/{x}-{y}'.format(x=x,y=y))
+        # ['lock','Invalid click','win0','win1','continueTurn','changeTurn']
 
-def ismyturn():
-    return json.loads(wget('ismyturn'))
-    # [False,True]
+    def ismyturn(self):
+        return json.loads(self.wget('ismyturn'))
+        # [False,True]
 
-def myid():
-    return json.loads(wget('myid'))
-    # [0,1]
+    def myid(self):
+        return json.loads(self.wget('myid'))
+        # [0,1]
 
 '''
 ipython

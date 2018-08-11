@@ -2,6 +2,8 @@
 
 借助网络对战功能, 用Node的client, 连接server并向python脚本提供接口
 
+目前问题: 自己胜的判定通过`putxy`的返回值可以得出, 对方获胜要通过`gethistory`, 发现`length`变短了, 意味着自己输了并已经重开了一局. 这样就无法获取失败时的局面了.
+
 ## Install
 
 ```
@@ -21,6 +23,10 @@ node server.js
 
 开启本地client, 作为玩家, 同时也作为pythonapi的server
 ```
+node client.js -p 5051 -r 100
+```
+或者使用默认值`port 5051, room 100`时不加任何参数
+```
 node client.js
 ```
 
@@ -28,11 +34,12 @@ node client.js
 ```python
 # 一个可能的程序结构
 import time
-import pythonapi as p
+import pythonapi
 
 class pyAI:
     ...
 
+p=pythonapi.NetworkGame(port=5051)
 player=pyAI()
 player.setPut(p.putxy)
 winlose=[[0,0],[0,0]]
@@ -64,8 +71,13 @@ player1 = new OffensiveKeeperAI().
           init(gameview.game,gameview).bind(1-first2)
 ```
 
-
+让两个pythonAI对战的场合, 需要再开启一个`node client.js -p 5052 -r 100`, `room`一致而`port`不同  
+```python
+p2=pythonapi.NetworkGame(port=5052)
+```
 ## API
+
+**pythonapi.NetworkGame**
 
 + `gethistory()`  
   返回由没一步的[x,y,id]构成的列表  
@@ -79,7 +91,17 @@ player1 = new OffensiveKeeperAI().
   `-1`是已填的边  
   `2`是未占据的得分区  
   `4`是先手占据的得分区  
-  `8`是后手占据的得分区
+  `8`是后手占据的得分区  
+  推荐使用下一条的成员来做判断
+
++ 地图常量
+  ```
+  POINT=1
+  EDGE=0
+  SCORE=2
+  EDGE_USED=-1
+  SCORE_PLAYER=[4,8]
+  ```
 
 + `putxy(x,y)`  
   在x,y处落子  
