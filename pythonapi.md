@@ -32,7 +32,7 @@ node client.js
 
 之后执行python
 ```python
-# 一个可能的程序结构
+# 一个可能的程序结构, 详见pythondemo.py, 是一个可运行的例子
 import time
 import pythonapi
 
@@ -49,7 +49,7 @@ while number:
     player.setPlayer(p.myid())
     player.setMap(p.getmap())
     while True:
-        if not ismyturn():
+        if not p.ismyturn():
             time.sleep(0.01)
             continue
         wincheck=player.update(p.gethistory())
@@ -92,7 +92,8 @@ p2=pythonapi.NetworkGame(port=5052)
   `2`是未占据的得分区  
   `4`是先手占据的得分区  
   `8`是后手占据的得分区  
-  推荐使用下一条的成员来做判断
+  推荐使用下一条的成员来做判断  
+  形如`if number == p.EDGE:`
 
 + 地图常量
   ```
