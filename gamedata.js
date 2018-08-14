@@ -3,6 +3,8 @@ GameData=function(){
     this.endImmediately=true
 }
 /* 
+game=new GameData().fromGame(gameview.game)
+
 GameData {endImmediately: true, xsize: 6, ysize: 6, winScore: 18, totalScore: 36, …}
 area : (6) [Array(6), Array(6), Array(6), Array(6), Array(6), Array(6)]
 connectedRegion : {}
@@ -39,22 +41,22 @@ GameData.prototype.count=function(x,y,number){
     }
     return count
 }
-// game.POINT=1   =>   1000
+// game.POINT=1   =>   -1000
 // game.EDGE=0   =>   [1,10,100] [立刻得分,不得分,差一手得分]
 // game.SCORE=2   =>   [10000,10001,10002,10003] 周围边的完成数
 // game.EDGE_USED=-1   =>   -100000
 // game.SCORE_PLAYER=[4,8]   =>   10004 周围边的完成数
 // ↓
-GameData.prototype.POINT=1000
-GameData.prototype.EDGE_USED=-100000
-GameData.prototype.EDGE_NOW=1
-GameData.prototype.EDGE_WILL=100
-GameData.prototype.EDGE_NOT=10
-GameData.prototype.SCORE_0=10000
-GameData.prototype.SCORE_1=10001
-GameData.prototype.SCORE_2=10002
-GameData.prototype.SCORE_3=10003
-GameData.prototype.SCORE_4=10004
+GameData.prototype.POINT=-888
+GameData.prototype.EDGE_USED=-999
+GameData.prototype.EDGE_NOW=1111
+GameData.prototype.EDGE_WILL=2222
+GameData.prototype.EDGE_NOT=3333
+GameData.prototype.SCORE_0=1000
+GameData.prototype.SCORE_1=1001
+GameData.prototype.SCORE_2=1002
+GameData.prototype.SCORE_3=1003
+GameData.prototype.SCORE_4=1004
 // game.POINT              点
 // game.EDGE_USED          用过的边
 // game.EDGE_NOW           立刻得分的边
@@ -102,7 +104,7 @@ GameData.prototype.fromGame=function(game){
     for(var jj=0;jj<2*game.ysize+1;jj++){
         for(var ii=0;ii<2*game.xsize+1;ii++){
             if((ii+jj)%2===0){
-                if(ii%2===0)_game.xy(ii,jj,game.POINT);
+                if(ii%2===0)_game.xy(ii,jj,_game.POINT);
             } else {
                 if(_game.xy(ii,jj)===game.EDGE_USED){
                     _game.xy(ii,jj,_game.EDGE_USED)
@@ -275,7 +277,7 @@ GameData.prototype.areaxy=function(x,y,value){
 // game.SCORE_2            周围有2个边的分
 // game.SCORE_3            周围有3个边的分
 // game.SCORE_4            周围有4个边的分
-GameData.prototype.putxy=function(x,y,callback){
+GameData.prototype.putxy=function(x,y){
     var game=this
     var edgebefore=game.xy(x,y)
     game.xy(x,y,game.EDGE_USED)
@@ -283,25 +285,205 @@ GameData.prototype.putxy=function(x,y,callback){
     game.edgeCount[game.EDGE_USED]++
     var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
     var score=false
+    var temp=[]
     for(var ii=0,d;d=directions[ii];ii++){
         var xx=x+d.x, yy=y+d.y
         var scorebefore=game.xy(xx,yy)
-        if(scorebefore===game.POINT)continue;
+        if(scorebefore===game.POINT || scorebefore==='out range')continue;
         // if(scorebefore===game.SCORE_4)continue; 不可能发生
         scorenow=scorebefore+1
         game.xy(xx,yy,scorenow)
         game.scoreCount[scorebefore]--
         game.scoreCount[scorenow]++
-        //todo 维护联通区域未完成
+        //维护联通区域
         if(scorenow===game.SCORE_1){
             //不需要做任何事
         } else if(scorenow===game.SCORE_2){
-            //todo
+            //把剩下的两条边中的game.EDGE_NOT标记为game.EDGE_WILL
+            for(var jj=0,dd;dd=directions[jj];jj++){
+                var xxx=xx+dd.x, yyy=yy+dd.y
+                if(game.xy(xxx,yyy)!==game.EDGE_NOT)continue;
+                game.xy(xxx,yyy,game.EDGE_WILL)
+                game.edgeCount[game.EDGE_NOT]--
+                game.edgeCount[game.EDGE_WILL]++
+            }
+            //维护联通区域
+            var links=[]
+            for(var jj=0,dd;dd=directions[jj];jj++){
+                var xxx=xx+dd.x, yyy=yy+dd.y
+                if(game.xy(xxx,yyy)===game.EDGE_USED)continue;
+                var index_next=game.areaxy(xx+2*dd.x,yy+2*dd.y)
+                links.push({
+                    //directionindex:jj,
+                    index:index_next==='out range'?0:index_next,
+                    //direction:dd,
+                    x:xx+2*dd.x,
+                    y:yy+2*dd.y
+                })
+            }
+            var index=links[0].index
+            var region=game.connectedRegion[index]
+            //形成环
+            if(index===links[1].index && index!=0){
+                region.block.push({'x':xx,'y':yy})
+                region.isRing=true
+                game.areaxy(xx,yy,index)
+                continue
+            }
+            //新区域
+            if(index===links[1].index && index==0){
+                game.regionNum++
+                game.maxIndex++
+                region={
+                    block:[{'x':xx,'y':yy}],
+                    isRing:false,
+                    index:game.maxIndex,
+                }
+                game.connectedRegion[region.index]=region
+                game.areaxy(xx,yy,region.index)
+                continue
+            }
+            //其中一个区域上加一格
+            if(index==0 || links[1].index==0){
+                links[0]=index!=0?links[0]:links[1]
+                index=links[0].index
+                region=game.connectedRegion[index]
+                if(region.block[0].x==links[0].x && region.block[0].y==links[0].y){
+                    region.block.unshift({'x':xx,'y':yy})
+                } else {
+                    region.block.push({'x':xx,'y':yy})
+                }
+                game.areaxy(xx,yy,index)
+                continue
+            }
+            //合并两个区域
+            if(region.block[0].x==links[0].x && region.block[0].y==links[0].y)region.block.reverse();
+            var region2=game.connectedRegion[links[1].index]
+            if(!(region2.block[0].x==links[1].x && region2.block[0].y==links[1].y))region2.block.reverse();
+            region.block=region.block.concat([{'x':xx,'y':yy}]).concat(region2.block)
+            game.areaxy(xx,yy,index)
+            for(var jj=0,pt;pt=region2.block[jj];jj++){
+                game.areaxy(pt.x,pt.y,index)
+            }
+            var index2index=game.scoreRegion.indexOf(region2.index)
+            if(index2index!==-1){
+                game.scoreRegion.splice(index2index,1)
+                if(game.scoreRegion.indexOf(index)!==-1){
+                    region.isRing=true;
+                } else {
+                    game.scoreRegion.push(index)
+                }
+            }
+            game.connectedRegion[region2.index]=null
+            game.regionNum--
         } else if(scorenow===game.SCORE_3){
+            //把剩下的一条边标记为 game.EDGE_NOW
+            for(var jj=0,dd;dd=directions[jj];jj++){
+                var xxx=xx+dd.x, yyy=yy+dd.y
+                var edgebefore_nextby=game.xy(xxx,yyy)
+                if([game.EDGE_NOT,game.EDGE_WILL].indexOf(edgebefore_nextby)===-1)continue;
+                game.xy(xxx,yyy,game.EDGE_NOW)
+                game.edgeCount[edgebefore_nextby]--
+                game.edgeCount[game.EDGE_NOW]++
+                break
+            }
+            //处理联通区域
             var index = game.areaxy(xx,yy)
             var region=game.connectedRegion[index]
-            if(region.isRing && ii<2)continue;
-            //todo
+            //有环区域
+            if(region.isRing && ii<2){
+                for(var jj=0,pt;pt=region.block[jj];jj++){
+                    if(pt.x==xx && pt.y==yy)break;
+                }
+                temp[0]=jj
+                continue
+            }
+            if(region.isRing){
+                for(var jj=0,pt;pt=region.block[jj];jj++){
+                    if(pt.x==xx && pt.y==yy)break;
+                }
+                if(Math.abs(jj-temp[0])!=1)continue;
+                jj=Math.max(jj,temp[0])
+                if(game.scoreRegion.indexOf(index)===-1){
+                    var newblock = region.block.slice(jj)
+                    newblock.concat(region.block.slice(0,jj))
+                    region.block=newblock
+                    game.scoreRegion.push(index)
+                } else {
+                    //环被取了最边缘的
+                    if(jj===1 || jj===region.block.length-1)continue;
+                    //一个环分裂成两个环
+                    var newblock = region.block.slice(jj)
+                    region.block=region.block.slice(0,jj)
+                    game.regionNum++
+                    game.maxIndex++
+                    var newregion={
+                        block:newblock,
+                        isRing:true,
+                        index:game.maxIndex,
+                    }
+                    game.scoreRegion.push(newregion.index)
+                    game.connectedRegion[newregion.index]=newregion
+                    for(var jj=0,pt;pt=newregion.block[jj];jj++){
+                        game.areaxy(pt.x,pt.y,newregion.index)
+                    }
+                }
+                continue
+            }
+            //无环区域的边缘
+            if(game.areaxy(x-d.x, y-d.y)!=index){
+                if(game.scoreRegion.indexOf(index)===-1){
+                    game.scoreRegion.push(index)
+                } else if(!score){
+                    region.isRing=true
+                }
+                continue
+            }
+            //无环区域的中心
+            if(ii<2)continue;
+            for(var jj=0,pt;pt=region.block[jj];jj++){
+                if(pt.x==xx && pt.y==yy)break;
+                if(pt.x==x-d.x && pt.y==y-d.y)break;
+            }
+            jj+=1;
+            if(game.scoreRegion.indexOf(index)===-1){
+                //分裂
+                var newblock = region.block.slice(jj)
+                region.block=region.block.slice(0,jj)
+                game.regionNum+=1
+                game.maxIndex+=1
+                var newregion={
+                    block:newblock,
+                    isRing:false,
+                    index:game.maxIndex,
+                }
+                game.scoreRegion.push(index)
+                game.scoreRegion.push(newregion.index)
+                game.connectedRegion[newregion.index]=newregion
+                for(var jj=0,pt;pt=newregion.block[jj];jj++){
+                    game.areaxy(pt.x,pt.y,newregion.index)
+                }
+            } else {
+                //被取了最边缘的
+                if(jj===1 || jj===region.block.length-1)continue;
+                //分裂
+                var newblock = region.block.slice(jj)
+                region.block=region.block.slice(0,jj)
+                game.regionNum+=1
+                game.maxIndex+=1
+                var newregion={
+                    block:newblock,
+                    isRing:false,
+                    index:game.maxIndex,
+                }
+                game.scoreRegion.push(newregion.index)
+                game.connectedRegion[newregion.index]=newregion
+                for(var jj=0,pt;pt=newregion.block[jj];jj++){
+                    game.areaxy(pt.x,pt.y,newregion.index)
+                }
+                if(game.xy(region.block[0].x,region.block[0].y)===game.SCORE_3)region.isRing=true;
+                if(game.xy(newregion.block[newregion.block.length-1].x,newregion.block[newregion.block.length-1].y)===game.SCORE_3)newregion.isRing=true;
+            }
         } else if(scorenow===game.SCORE_4){
             //有图块完成,更新分数
             score=true
@@ -319,7 +501,6 @@ GameData.prototype.putxy=function(x,y,callback){
                 game.connectedRegion[index]=null
                 game.scoreRegion.splice(game.scoreRegion.indexOf(index),1)
             } else {
-                // 错的
                 if(region.block[0].x===xx && region.block[0].y===yy){
                     region.block=region.block.slice(1)
                 } else {
