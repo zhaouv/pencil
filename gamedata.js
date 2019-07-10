@@ -164,37 +164,41 @@ GameData.prototype.initConnectedRegion=function(){
     var v=function(x,y,value){
         if(x<0||x>2*game.xsize)return true;
         if(y<0||y>2*game.ysize)return true;
-        if(game.xy(x,y)!==game.SCORE_2 && game.xy(x,y)!==game.SCORE_3)visited[y>>1][x>>1]=true;
+        if(game.xy(x,y)!==game.SCORE_2 && game.xy(x,y)!==game.SCORE_3)visited[y>>1][x>>1]=true; // 不关心开放区域和已经被拿的分
         if(value==null)return visited[y>>1][x>>1];
         visited[y>>1][x>>1]=value
     }
     var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
     game.connectedRegion={}
-    var stack10003 = []
-    game.scoreRegion=stack10003
+    var stack10003 = [] // 能得分的区域
+    game.scoreRegion=stack10003 
     var regionNum=0
     for(var y=1;y<2*game.ysize+1;y+=2){
         for(var x=1;x<2*game.xsize+1;x+=2){
             // --x,y-- 
             if(v(x,y))continue;
             regionNum++
-            var queue=[{'x':x,'y':y}]
+            var queue=[{'x':x,'y':y}] // 把初始点加入队列
             var region={
                 block:[],
                 isRing:false,
                 index:regionNum,
-            }
+            } // 创建一个联通区域对象
             while(queue.length){
                 var now = queue.shift()
-                region.block.push(now)
+                region.block.push(now) // 此处只是加到集合, 集合内部不反应格子的连接
+                // TODO: 如果此处带判断的选择使用push还是unshift, 之后就无需再单独把集合变成反应连接的结构了
                 v(now.x,now.y,true)
                 if(game.xy(now.x,now.y)===game.SCORE_3){
+                    // 当一个区域第一次发现能得分的格子时, 加入得分区域, 
+                    // 第二次时标记为有环区域
                     if(stack10003.indexOf(region.index)===-1){
                         stack10003.push(region.index)
                     }
                     else region.isRing=true;
                 }
                 for(var ii=0,d;d=directions[ii];ii++){
+                    // 判断四周的格式是否加到队列
                     var xx=now.x+d.x*2, yy=now.y+d.y*2
                     if(game.xy(now.x+d.x,now.y+d.y)!==game.EDGE_WILL && game.xy(now.x+d.x,now.y+d.y)!==game.EDGE_NOW)continue;
                     if(v(xx,yy))continue;
@@ -218,7 +222,7 @@ GameData.prototype.initConnectedRegion=function(){
     for(var index in game.connectedRegion){
         // 这里要注意index是字符串,不能用===
         var region=game.connectedRegion[index]
-        if(region.block.length<=2)continue;
+        if(region.block.length<=2)continue; // 长度小于2的自然是连接在一起的
         var now=region.block[0]
         var stack=[]
         for(var ii=0,d;d=directions[ii];ii++){
@@ -286,7 +290,8 @@ GameData.prototype.putxy=function(x,y){
     var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
     var score=false
     var temp=[]
-    for(var ii=0,d;d=directions[ii];ii++){
+    for(var ii=0,d;d=directions[ii];ii++){ 
+        // 其中两个是点, 两个是相邻的区域
         var xx=x+d.x, yy=y+d.y
         var scorebefore=game.xy(xx,yy)
         if(scorebefore===game.POINT || scorebefore==='out range')continue;
