@@ -233,160 +233,101 @@ GreedyRandomAI=function(){
 GreedyRandomAI.prototype = Object.create(GamePlayer.prototype)
 GreedyRandomAI.prototype.constructor = GreedyRandomAI
 
+GreedyRandomAI.prototype.init=function(game){
+    this.game=game
+    this.gameData=new GameData().fromGame(game)
+    return this
+}
+GreedyRandomAI.prototype.bind=function(playerId,callback){
+    new GamePlayer().bind.call(this,playerId,callback)
+    var thisplayer = this
+    thisplayer.emitPut=function(x,y){
+        thisplayer.gameData.putxy(x,y)
+    }
+    thisplayer.emitWin=function(){
+    }
+    this.game.changeEdge.push(thisplayer.emitPut)
+    this.game.win.push(thisplayer.emitWin)
+    return this
+}
+GreedyRandomAI.prototype.remove=function(){
+    new GamePlayer().remove.call(this)
+    var index = this.game.changeEdge.indexOf(this.emitPut)
+    this.game.changeEdge.splice(index,1)
+    this.emitPut=null
+    var index = this.game.changeEdge.indexOf(this.emitWin)
+    this.game.win.splice(index,1)
+    this.emitWin=null
+}
+
 GreedyRandomAI.prototype.rand=function(n){
     if(!n)return Math.random();
     return ~~(n*Math.random())
 }
 
-GreedyRandomAI.prototype.xy=function(x,y,value){
-    if(x<0||x>2*this.game.xsize)return 'out range';
-    if(y<0||y>2*this.game.ysize)return 'out range';
-    if(value==null)return this.map[y][x];
-    this.map[y][x]=value
-}
-
-GreedyRandomAI.prototype.count=function(x,y,number){
-    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
-    var count=0
-    var _cmp=function(a,b){return b.indexOf(a)!==-1}
-    if(typeof(number)===typeof(1))_cmp=function(a,b){return a===b};
-    for(var ii=0,d;d=directions[ii];ii++){
-        var xx=x+d.x, yy=y+d.y
-        if(_cmp(this.xy(xx,yy),number))count++;
-    }
-    return count
-}
-
-// game.POINT=1   =>   1000
-// game.EDGE=0   =>   [1,10,100] [立刻得分,不得分,差一手得分]
-// game.SCORE=2   =>   [10000,10001,10002,10003] 周围边的完成数
-// game.EDGE_USED=-1   =>   -100000
-// game.SCORE_PLAYER=[4,8]   =>   10004 周围边的完成数
-GreedyRandomAI.prototype.initMap=function(){
-    var game = this.game
-    this.map=JSON.parse(JSON.stringify(game.map))
-    this.edgeCount={1:0,10:0,100:0}
-    for(var jj=1;jj<2*game.ysize+1;jj+=2){
-        for(var ii=1;ii<2*game.xsize+1;ii+=2){
-            this.xy(ii,jj,10000+this.count(ii,jj,-1))
-        }
-    }
-    for(var jj=0;jj<2*game.ysize+1;jj++){
-        for(var ii=0;ii<2*game.xsize+1;ii++){
-            if((ii+jj)%2===0){
-                if(ii%2===0)this.xy(ii,jj,1000);
-            } else {
-                if(this.xy(ii,jj)===-1){
-                    this.xy(ii,jj,-100000)
-                } else if(this.count(ii,jj,10003)){
-                    this.xy(ii,jj,1)
-                    this.edgeCount[1]++
-                } else if (this.count(ii,jj,10002)) {
-                    this.xy(ii,jj,100)
-                    this.edgeCount[100]++
-                } else {
-                    this.xy(ii,jj,10)
-                    this.edgeCount[10]++
-                }
-            }
-        }
-    }
-}
-
 GreedyRandomAI.prototype.getRandWhere=function(number){
-    var count=0
-    var game=this.game
-    for(var jj=0;jj<2*game.ysize+1;jj++){
-        for(var ii=0;ii<2*game.xsize+1;ii++){
-            if(this.xy(ii,jj)===number)count++;
-        }
-    }
+    var gameData=this.gameData
+    var count=gameData.edgeCount[number];
     if(!count)return 'not exist';
-    var index = this.rand(count)+1
-    for(var jj=0;jj<2*game.ysize+1;jj++){
-        for(var ii=0;ii<2*game.xsize+1;ii++){
-            if(this.xy(ii,jj)===number){
-                index--;
+    var index = this.rand(count)
+    // TODO: 修改实现, 改为随机起点找第一个, 或者更快的实现
+    for(var jj=0;jj<2*gameData.ysize+1;jj++){
+        for(var ii=0;ii<2*gameData.xsize+1;ii++){
+            if(gameData.xy(ii,jj)===number){
                 if(!index)return {'x':ii,'y':jj}
+                index--;
             }
         }
     }
     return 'error'
 }
 
-GreedyRandomAI.prototype.initConnectedRegion=function(){
-    var game=this.game
-    var visited = eval('['+Array(game.ysize+1).join('['+Array(game.xsize+1).join('false,')+'],')+']') // ysize*xsize的false
-    var thisplayer=this;
-    var v=function(x,y,value){
-        if(x<0||x>2*thisplayer.game.xsize)return true;
-        if(y<0||y>2*thisplayer.game.ysize)return true;
-        if(thisplayer.xy(x,y)!==10002 && thisplayer.xy(x,y)!==10003)visited[y>>1][x>>1]=true;
-        if(value==null)return visited[y>>1][x>>1];
-        visited[y>>1][x>>1]=value
+GreedyRandomAI.prototype.getOneEdgeFromRegion=function(region){
+    var gameData=this.gameData
+    var len = region.block.length
+    var stack = region.block
+    var p1=0
+    var p2=1
+    if(gameData.xy(stack[0].x,stack[0].y)!==gameData.SCORE_3){
+        p1=len-1
+        p2=len-2
     }
+    if(len>1)return {'x':(stack[p1].x+stack[p2].x)/2,'y':(stack[p1].y+stack[p2].y)/2};
     var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
-    this.connectedRegion={}
-    this.connectedRegionKeys=[]
-    var stack10003 = []
-    for(var y=1;y<2*game.ysize+1;y+=2){
-        for(var x=1;x<2*game.xsize+1;x+=2){
-            // --x,y-- 
-            if(v(x,y))continue;
-            var queue=[{'x':x,'y':y}]
-            var stack=[]
-            while(queue.length){
-                var now = queue.shift()
-                stack.push(now)
-                v(now.x,now.y,true)
-                if(this.xy(now.x,now.y)===10003)stack10003.push(stack);
-                for(var ii=0,d;d=directions[ii];ii++){
-                    var xx=now.x+d.x*2, yy=now.y+d.y*2
-                    if(this.xy(now.x+d.x,now.y+d.y)!==100 && this.xy(now.x+d.x,now.y+d.y)!==1)continue;
-                    if(v(xx,yy))continue;
-                    queue.push({'x':xx,'y':yy})
-                }
-            }
-            var len = stack.length
-            if(!this.connectedRegion[len]){
-                this.connectedRegionKeys.push(len)
-                this.connectedRegion[len]=[stack]
-            } else {
-                this.connectedRegion[len].push(stack)
-            }
-            // --x,y-- 
-        }
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx=stack[p1].x+d.x, yy=stack[p1].y+d.y
+        if(gameData.xy(xx,yy)!==gameData.EDGE_USED)return {'x':xx,'y':yy};
     }
-    return stack10003
+}
+GreedyRandomAI.prototype.getOneEdgeFromRegionIndex=function(regionIndex){
+    return this.getOneEdgeFromRegion(this.gameData.connectedRegion[regionIndex])
 }
 
 GreedyRandomAI.prototype.minConnectedRegion=function(){
-    this.initConnectedRegion()
-    var len = Math.min.apply(null,this.connectedRegionKeys)
-    var stack = this.connectedRegion[len][0]
-    if(len>1)return {'x':(stack[0].x+stack[1].x)/2,'y':(stack[0].y+stack[1].y)/2};
-    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
-    for(var ii=0,d;d=directions[ii];ii++){
-        var xx=stack[0].x+d.x, yy=stack[0].y+d.y
-        if(this.xy(xx,yy)===100)return {'x':xx,'y':yy};
+    var gameData=this.gameData
+    var minRegion=null
+    for(var ii in gameData.connectedRegion){
+        var region = gameData.connectedRegion[ii]
+        if(!region)continue;
+        if(minRegion==null || region.block.length<minRegion.block.length)minRegion=region;
     }
+    return this.getOneEdgeFromRegion(minRegion)
 }
 
 GreedyRandomAI.prototype.tryKeepOffensive=function(){
     // Greedy不维护先手
-    return this.getRandWhere(1)
+    return this.getRandWhere(this.gameData.EDGE_NOW)
 }
 
 GreedyRandomAI.prototype.where=function(){
-    //if(!this.map)this.initMap();
-    this.initMap()
-    var number = 1
-    if(this.edgeCount[1]){number = 1} //有得分块
-    else if(this.edgeCount[10]){number = 10} //无法得分且无需让分
-    else {number = 100} //需让分
+    var gameData=this.gameData
+    var number = gameData.EDGE_NOW
+    if(gameData.edgeCount[gameData.EDGE_NOW]){number = gameData.EDGE_NOW} //有得分块
+    else if(gameData.edgeCount[gameData.EDGE_NOT]){number = gameData.EDGE_NOT} //无法得分且无需让分
+    else {number = gameData.EDGE_WILL} //需让分
     //
-    if(number!==100){
-        if(number===1 && this.edgeCount[10]===0){var where = this.tryKeepOffensive()}
+    if(number!==gameData.EDGE_WILL){
+        if(number===gameData.EDGE_NOW && gameData.edgeCount[gameData.EDGE_NOT]===0){var where = this.tryKeepOffensive()}
         else {var where = this.getRandWhere(number)}
     } else {
         var where = this.minConnectedRegion()
@@ -422,47 +363,78 @@ OffensiveKeeperAI.prototype = Object.create(GreedyRandomAI.prototype)
 OffensiveKeeperAI.prototype.constructor = OffensiveKeeperAI
 
 OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
-    var game=this.game
-    if(
-        (this.edgeCount[1]===2||this.edgeCount[1]===1) && 
-        (this.edgeCount[100]===1||this.edgeCount[100]===0)
-    ) return this.getRandWhere(1); // 最后一块不抢先手直接吃掉
+    var gameData=this.gameData
+    var eatOne = this.getOneEdgeFromRegionIndex(gameData.scoreRegion[0]) // >随便吃一块时的值
 
-    var stack1=[] //存所有能立刻得分的边
-    for(var jj=0;jj<2*game.ysize+1;jj++){
-        for(var ii=0;ii<2*game.xsize+1;ii++){
-            if(this.xy(ii,jj)===1){
-                if(this.count(ii,jj,10002)===0 || stack1.length===2)return {'x':ii,'y':jj};
-                stack1.push({'x':ii,'y':jj});
-            }
+    // 最后一块直接吃掉
+    if(gameData.regionNum==1) return eatOne;
+
+    // >按照大小分类
+    var regions={};
+    for(var ii in gameData.connectedRegion){
+        var region = gameData.connectedRegion[ii]
+        if(!region)continue;
+        var len = region.block.length
+        regions[len]=regions[len]||[]
+        regions[len].push(region.index)
+    }
+
+    // 有得分单块
+    if(regions[1]){
+        for(var ii=0;ii<regions[1].length;ii++){
+            var regionIndex=regions[1][ii];
+            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return this.getOneEdgeFromRegionIndex(regionIndex);
         }
     }
 
-    var stack10003 = this.initConnectedRegion()
-
-    // 有剩余的单双块
-    if(this.connectedRegion[1] || (this.connectedRegion[2] && this.connectedRegion[2].length>1))return stack1[0];
-    if(this.connectedRegion[2] && this.connectedRegion[2].length==1 && this.connectedRegion[2][0]!==stack10003[0])return stack1[0];
-
-    // 两个长条
-    if(stack10003.length===2 && (stack10003[0]!==stack10003[1]))return stack1[0];
-    // 一个中心部分的两端长条
-    if(stack10003.length===2){
-        if(stack10003[0].length!==4)return stack1[0];
-    }
-    // 一个长条
-    if(stack10003.length===1){
-        if(stack10003[0].length!==2)return stack1[0];
+    // 有得分双块且还有别的能得分的块
+    if(regions[2] && gameData.scoreRegion.length>1){
+        for(var ii=0;ii<regions[2].length;ii++){
+            var regionIndex=regions[2][ii];
+            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return this.getOneEdgeFromRegionIndex(regionIndex);
+        }
     }
 
-    //让分数拿先手
+    // 多于两个块按先吃环的顺序吃掉一个
+    if(gameData.scoreRegion.length>2){
+        for(var ii in gameData.scoreRegion){
+            var region = gameData.connectedRegion[gameData.scoreRegion[ii]]
+            if(region.isRing)return this.getOneEdgeFromRegion(region);
+        }
+        return eatOne;
+    }
+
+    // 两个块且第二个是环
+    if(gameData.scoreRegion.length===2 && gameData.connectedRegion[gameData.scoreRegion[1]].isRing)return this.getOneEdgeFromRegionIndex(gameData.scoreRegion[1]);
+
+    // 两个块
+    if(gameData.scoreRegion.length===2)return eatOne;
+    
+    // >此时只有一个块了
+    var region=gameData.connectedRegion[gameData.scoreRegion[0]];
+
+    // 长度不是4的环
+    if(region.isRing && region.block.length!==4)return eatOne;
+
+    // 长度不是2的长条
+    if(!region.isRing && region.block.length!==2)return eatOne;
+
+    // >让分数拿先手
+    var stack=region.block;
+    // 长度是4的环
+    if(region.block.length===4) return {'x':(stack[1].x+stack[2].x)/2,'y':(stack[1].y+stack[2].y)/2};
+    // 长度是2的长条
+    var p1=1
+    if(gameData.xy(stack[0].x,stack[0].y)!==gameData.SCORE_3){
+        p1=0
+    }
     var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
-    for(var jj=0,pt;pt=stack10003[0][jj];jj++){
-        for(var ii=0,d;d=directions[ii];ii++){
-            var xx=pt.x+d.x, yy=pt.y+d.y
-            if(this.xy(xx,yy)===100)return {'x':xx,'y':yy};
-        }
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx=stack[p1].x+d.x, yy=stack[p1].y+d.y
+        var xxx=stack[p1].x+2*d.x, yyy=stack[p1].y+2*d.y
+        if(gameData.xy(xx,yy)!==gameData.EDGE_USED && gameData.xy(xxx,yyy)=='out range')return {'x':xx,'y':yy};
     }
+
     console.log('bug:理论上不应该走到这里')
-    return this.getRandWhere(1)
+    return eatOne;
 }
