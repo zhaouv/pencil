@@ -3,6 +3,7 @@ GameData=function(){
     this.endImmediately=true
 }
 /* 
+console.log(gameview.game,new GameData().fromGame(gameview.game))
 game=new GameData().fromGame(gameview.game)
 
 GameData {endImmediately: true, xsize: 6, ysize: 6, winScore: 18, totalScore: 36, …}
@@ -411,7 +412,7 @@ GameData.prototype.putxy=function(x,y){
                 jj=Math.max(jj,temp[0])
                 if(game.scoreRegion.indexOf(index)===-1){
                     var newblock = region.block.slice(jj)
-                    newblock.concat(region.block.slice(0,jj))
+                    newblock=newblock.concat(region.block.slice(0,jj))
                     region.block=newblock
                     game.scoreRegion.push(index)
                 } else {
