@@ -1,62 +1,73 @@
 
 ////////////////// TreeSearchAI //////////////////
 TreeSearchAI=function(){
-    GamePlayer.call(this)
+    OffensiveKeeperAI.call(this)
     return this
 }
-TreeSearchAI.prototype = Object.create(GamePlayer.prototype)
+TreeSearchAI.prototype = Object.create(OffensiveKeeperAI.prototype)
 TreeSearchAI.prototype.constructor = TreeSearchAI
 
 //player1 = new TreeSearchAI().init(gameview.game,gameview).bind(1-first2);player1.gameData
 //console.log(new GameData().fromGame(gameview.game),player1.gameData)
 
-TreeSearchAI.prototype.init=function(game){
-    this.game=game
-    this.gameData=new GameData().fromGame(game)
-    return this
+TreeSearchAI.prototype.changeTurn=function(){
+    this.game.lock=0
 }
-TreeSearchAI.prototype.bind=function(playerId,callback){
-    new GamePlayer().bind.call(this,playerId,callback)
-    var thisplayer = this
-    thisplayer.emitPut=function(x,y){
-        thisplayer.gameData.putxy(x,y)
-    }
-    thisplayer.emitWin=function(){
-    }
-    this.game.changeEdge.push(thisplayer.emitPut)
-    this.game.win.push(thisplayer.emitWin)
-    return this
-}
-TreeSearchAI.prototype.remove=function(){
-    new GamePlayer().remove.call(this)
-    var index = this.game.changeEdge.indexOf(this.emitPut)
-    this.game.changeEdge.splice(index,1)
-    this.emitPut=null
-    var index = this.game.changeEdge.indexOf(this.emitWin)
-    this.game.win.splice(index,1)
-    this.emitWin=null
+TreeSearchAI.prototype.continueTurn=function(){
+    this.game.lock=0
 }
 
-// TreeSearchAI.prototype.changeTurn=function(){
-//     var thisplayer = this
-//     thisplayer.game.lock=1
-//     var where = this.where()
-//     setTimeout(function(){
-//         thisplayer.game.lock=0
-//         thisplayer.game.putxy(where.x,where.y)
-//     },250)
-// }
-// TreeSearchAI.prototype.continueTurn=function(){
-//     var thisplayer = this
-//     thisplayer.game.lock=1
-//     var where = this.where()
-//     setTimeout(function(){
-//         thisplayer.game.lock=0
-//         thisplayer.game.putxy(where.x,where.y)
-//     },120)
-// }
+TreeSearchAI.prototype.SEARCH_DEPTH=10
+TreeSearchAI.prototype.WIN_SCORE=1
+TreeSearchAI.prototype.BALANCE_POINT=0.5
+TreeSearchAI.prototype.EVALUATE_AI=OffensiveKeeperAI
 
-TreeSearchAI.prototype.where = function(){}
-TreeSearchAI.prototype.gen = function(game){}
-TreeSearchAI.prototype.evaluate = function(game){}
-TreeSearchAI.prototype.negamax = function(game, deep, alpha, beta, role){}
+TreeSearchAI.prototype.where = function(){
+    this.count=0
+    this.ABcut=0
+    this.way=null
+    var value=this.negamax(this.gameData,this.SEARCH_DEPTH,-Infinity,Infinity)
+    if(value>this.BALANCE_POINT){
+        return this.way[0];
+    } else {
+        return this.way[0];
+    }
+}
+
+TreeSearchAI.prototype.put = function(gameData,way){
+    for(var ii=0,where;where=way[ii];ii++)gameData.putxy(where.x,where.y);
+}
+
+TreeSearchAI.prototype.recover = function(gameData,newGameData,way){
+    return gameData;
+}
+
+TreeSearchAI.prototype.negamax = function(gameData, deep, alpha, beta){
+    this.count++
+    if(gameData.winnerId!=null)return ~~(gameData.winnerId==this.playerId);
+    if(deep<=0)return this.evaluate(gameDate);
+    var best=-Infinity;
+    var ways=this.gen(gameData,deep);
+    for(var ii=0,way;way=ways[ii];ii++){
+        var newGameData=this.put(gameData,way)
+        // ?add hash
+        var value=-negamax(newGameData, deep-1, -beta, -alpha)
+        gameData=this.recover(gameData,newGameData,way)
+        if(value>best){
+            best=value;
+            this.way=way
+            if(best==this.WIN_SCORE)return this.WIN_SCORE;
+        }
+        alpha=Math.max(best,alpha)
+        if(value>=beta){
+            this.ABcut++
+            return value;
+        }
+        // ?add DFS search when deep<=2
+    }
+    return best;
+}
+
+TreeSearchAI.prototype.evaluate = function(gameData){}
+
+TreeSearchAI.prototype.gen = function(gameData,deep){}
