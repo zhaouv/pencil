@@ -225,20 +225,20 @@ NetworkPlayer.prototype.ready=function(){
     this.game.player[0].changeTurn()
 }
 
-////////////////// GreedyRandomAI //////////////////
-GreedyRandomAI=function(){
+////////////////// AIPlayer //////////////////
+AIPlayer=function(){
     GamePlayer.call(this)
     return this
 }
-GreedyRandomAI.prototype = Object.create(GamePlayer.prototype)
-GreedyRandomAI.prototype.constructor = GreedyRandomAI
+AIPlayer.prototype = Object.create(GamePlayer.prototype)
+AIPlayer.prototype.constructor = AIPlayer
 
-GreedyRandomAI.prototype.init=function(game){
+AIPlayer.prototype.init=function(game){
     this.game=game
     this.gameData=new GameData().fromGame(game)
     return this
 }
-GreedyRandomAI.prototype.bind=function(playerId,callback){
+AIPlayer.prototype.bind=function(playerId,callback){
     new GamePlayer().bind.call(this,playerId,callback)
     var thisplayer = this
     thisplayer.emitPut=function(x,y){
@@ -250,7 +250,7 @@ GreedyRandomAI.prototype.bind=function(playerId,callback){
     this.game.win.push(thisplayer.emitWin)
     return this
 }
-GreedyRandomAI.prototype.remove=function(){
+AIPlayer.prototype.remove=function(){
     new GamePlayer().remove.call(this)
     var index = this.game.changeEdge.indexOf(this.emitPut)
     this.game.changeEdge.splice(index,1)
@@ -259,6 +259,42 @@ GreedyRandomAI.prototype.remove=function(){
     this.game.win.splice(index,1)
     this.emitWin=null
 }
+AIPlayer.prototype.where=function(){
+    var gameData=this.gameData
+    for(var jj=0;jj<2*gameData.ysize+1;jj++){
+        for(var ii=0;ii<2*gameData.xsize+1;ii++){
+            if([gameData.EDGE_NOW,gameData.EDGE_NOT,gameData.EDGE_WILL].indexOf(gameData.xy(ii,jj))===-1){
+                return {'x':ii,'y':jj};
+            }
+        }
+    }
+}
+AIPlayer.prototype.changeTurn=function(){
+    var thisplayer = this
+    thisplayer.game.lock=1
+    var where = this.where()
+    setTimeout(function(){
+        thisplayer.game.lock=0
+        thisplayer.game.putxy(where.x,where.y)
+    },250)
+}
+AIPlayer.prototype.continueTurn=function(){
+    var thisplayer = this
+    thisplayer.game.lock=1
+    var where = this.where()
+    setTimeout(function(){
+        thisplayer.game.lock=0
+        thisplayer.game.putxy(where.x,where.y)
+    },120)
+}
+
+////////////////// GreedyRandomAI //////////////////
+GreedyRandomAI=function(){
+    AIPlayer.call(this)
+    return this
+}
+GreedyRandomAI.prototype = Object.create(AIPlayer.prototype)
+GreedyRandomAI.prototype.constructor = GreedyRandomAI
 
 GreedyRandomAI.prototype.rand=function(n){
     if(!n)return Math.random();
@@ -274,7 +310,7 @@ GreedyRandomAI.prototype.getRandWhere=function(number){
     for(var jj=0;jj<2*gameData.ysize+1;jj++){
         for(var ii=0;ii<2*gameData.xsize+1;ii++){
             if(gameData.xy(ii,jj)===number){
-                if(!index)return {'x':ii,'y':jj}
+                if(!index)return {'x':ii,'y':jj};
                 index--;
             }
         }
@@ -333,25 +369,6 @@ GreedyRandomAI.prototype.where=function(){
         var where = this.minConnectedRegion()
     }
     return where
-}
-
-GreedyRandomAI.prototype.changeTurn=function(){
-    var thisplayer = this
-    thisplayer.game.lock=1
-    var where = this.where()
-    setTimeout(function(){
-        thisplayer.game.lock=0
-        thisplayer.game.putxy(where.x,where.y)
-    },250)
-}
-GreedyRandomAI.prototype.continueTurn=function(){
-    var thisplayer = this
-    thisplayer.game.lock=1
-    var where = this.where()
-    setTimeout(function(){
-        thisplayer.game.lock=0
-        thisplayer.game.putxy(where.x,where.y)
-    },120)
 }
 
 ////////////////// OffensiveKeeperAI //////////////////
