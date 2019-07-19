@@ -23,18 +23,16 @@ TreeSearchAI.prototype.BALANCE_POINT=0
 TreeSearchAI.prototype.EVALUATE_AI=OffensiveKeeperAI
 TreeSearchAI.prototype.EVALUATE_TIMES=100
 
-TreeSearchAI.prototype.where = function(search_depth){
-    this.negamax_count=0
-    this.evaluate_count=0
-    this.ABcut=0
-    this.way=null
-    search_depth=search_depth!=null?search_depth:this.SEARCH_DEPTH
-    var value=this.negamax(this.gameData,search_depth,-Infinity,Infinity)
-    if(value>this.BALANCE_POINT){
-        return this.way[0];
-    } else {
-        return this.way[0];
+TreeSearchAI.prototype.where = function(){
+    if(this.way==undefined || this.way.length==0){
+        this.way=[]
+        this.negamax_count=0
+        this.evaluate_count=0
+        this.ABcut=0
+        search_depth=this.search_depth!=undefined?this.search_depth:this.SEARCH_DEPTH
+        this.negamax(this.gameData,search_depth,-Infinity,Infinity)
     }
+    return this.way.shift();
 }
 
 TreeSearchAI.prototype.put = function(gameData,way){
@@ -107,7 +105,7 @@ TreeSearchAI.prototype.gen = function(gameData,deep){
             if(!region)continue;
             if(minRegion==null || region.block.length<minRegion.block.length)minRegion=region;
         }
-        var where = this.getOneEdgeFromRegion(minRegion)
+        var where = gameData.getOneEdgeFromRegion(minRegion)
     }
     return [[where]]
 }
@@ -116,10 +114,10 @@ TreeSearchAI.prototype.gen = function(gameData,deep){
  * @returns {[Array.<Array.<{x:Number,y:Number}>>,Object]} [路线列表,信息], 路线是坐标的列表, 根据信息进一步处理列表
  */
 TreeSearchAI.prototype.tryKeepOffensive=function(gameData,deep){
-    var eatOne = this.getOneEdgeFromRegionIndex(gameData.scoreRegion[0]) // >随便吃一块时的值
+    var eatOne = gameData.getOneEdgeFromRegionIndex(gameData.scoreRegion[0]) // >随便吃一块时的值
 
     // 最后一块直接吃掉
-    if(gameData.regionNum==1) return eatOne;
+    if(gameData.regionNum==1) return [[gameData.getAllEdgesFromRegionIndex(gameData.scoreRegion[0])],{finish:true,onlythis:true}];
 
     // >按照大小分类
     var regions={};
@@ -135,7 +133,7 @@ TreeSearchAI.prototype.tryKeepOffensive=function(gameData,deep){
     if(regions[1]){
         for(var ii=0;ii<regions[1].length;ii++){
             var regionIndex=regions[1][ii];
-            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return this.getOneEdgeFromRegionIndex(regionIndex);
+            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return gameData.getOneEdgeFromRegionIndex(regionIndex);
         }
     }
 
@@ -143,7 +141,7 @@ TreeSearchAI.prototype.tryKeepOffensive=function(gameData,deep){
     if(regions[2] && gameData.scoreRegion.length>1){
         for(var ii=0;ii<regions[2].length;ii++){
             var regionIndex=regions[2][ii];
-            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return this.getOneEdgeFromRegionIndex(regionIndex);
+            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return gameData.getOneEdgeFromRegionIndex(regionIndex);
         }
     }
 
@@ -151,13 +149,13 @@ TreeSearchAI.prototype.tryKeepOffensive=function(gameData,deep){
     if(gameData.scoreRegion.length>2){
         for(var ii in gameData.scoreRegion){
             var region = gameData.connectedRegion[gameData.scoreRegion[ii]]
-            if(region.isRing)return this.getOneEdgeFromRegion(region);
+            if(region.isRing)return gameData.getOneEdgeFromRegion(region);
         }
         return eatOne;
     }
 
     // 两个块且第二个是环
-    if(gameData.scoreRegion.length===2 && gameData.connectedRegion[gameData.scoreRegion[1]].isRing)return this.getOneEdgeFromRegionIndex(gameData.scoreRegion[1]);
+    if(gameData.scoreRegion.length===2 && gameData.connectedRegion[gameData.scoreRegion[1]].isRing)return gameData.getOneEdgeFromRegionIndex(gameData.scoreRegion[1]);
 
     // 两个块
     if(gameData.scoreRegion.length===2)return eatOne;
@@ -187,3 +185,4 @@ TreeSearchAI.prototype.tryKeepOffensive=function(gameData,deep){
         if(gameData.xy(xx,yy)!==gameData.EDGE_USED && gameData.xy(xxx,yyy)=='out range')return {'x':xx,'y':yy};
     }
 }
+

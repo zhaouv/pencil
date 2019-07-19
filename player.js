@@ -318,38 +318,6 @@ GreedyRandomAI.prototype.getRandWhere=function(number){
     return 'error'
 }
 
-GreedyRandomAI.prototype.getOneEdgeFromRegion=function(region){
-    var gameData=this.gameData
-    var len = region.block.length
-    var stack = region.block
-    var p1=0
-    var p2=1
-    if(gameData.xy(stack[0].x,stack[0].y)!==gameData.SCORE_3){
-        p1=len-1
-        p2=len-2
-    }
-    if(len>1)return {'x':(stack[p1].x+stack[p2].x)/2,'y':(stack[p1].y+stack[p2].y)/2};
-    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
-    for(var ii=0,d;d=directions[ii];ii++){
-        var xx=stack[p1].x+d.x, yy=stack[p1].y+d.y
-        if(gameData.xy(xx,yy)!==gameData.EDGE_USED)return {'x':xx,'y':yy};
-    }
-}
-GreedyRandomAI.prototype.getOneEdgeFromRegionIndex=function(regionIndex){
-    return this.getOneEdgeFromRegion(this.gameData.connectedRegion[regionIndex])
-}
-
-GreedyRandomAI.prototype.minConnectedRegion=function(){
-    var gameData=this.gameData
-    var minRegion=null
-    for(var ii in gameData.connectedRegion){
-        var region = gameData.connectedRegion[ii]
-        if(!region)continue;
-        if(minRegion==null || region.block.length<minRegion.block.length)minRegion=region;
-    }
-    return this.getOneEdgeFromRegion(minRegion)
-}
-
 GreedyRandomAI.prototype.tryKeepOffensive=function(){
     // Greedy不维护先手
     return this.getRandWhere(this.gameData.EDGE_NOW)
@@ -366,7 +334,7 @@ GreedyRandomAI.prototype.where=function(){
         if(number===gameData.EDGE_NOW && gameData.edgeCount[gameData.EDGE_NOT]===0){var where = this.tryKeepOffensive()}
         else {var where = this.getRandWhere(number)}
     } else {
-        var where = this.minConnectedRegion()
+        var where = gameData.getOneEdgeFromRegion(gameData.getMinConnectedRegion())
     }
     return where
 }
@@ -381,7 +349,7 @@ OffensiveKeeperAI.prototype.constructor = OffensiveKeeperAI
 
 OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
     var gameData=this.gameData
-    var eatOne = this.getOneEdgeFromRegionIndex(gameData.scoreRegion[0]) // >随便吃一块时的值
+    var eatOne = gameData.getOneEdgeFromRegionIndex(gameData.scoreRegion[0]) // >随便吃一块时的值
 
     // 最后一块直接吃掉
     if(gameData.regionNum==1) return eatOne;
@@ -400,7 +368,7 @@ OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
     if(regions[1]){
         for(var ii=0;ii<regions[1].length;ii++){
             var regionIndex=regions[1][ii];
-            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return this.getOneEdgeFromRegionIndex(regionIndex);
+            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return gameData.getOneEdgeFromRegionIndex(regionIndex);
         }
     }
 
@@ -408,7 +376,7 @@ OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
     if(regions[2] && gameData.scoreRegion.length>1){
         for(var ii=0;ii<regions[2].length;ii++){
             var regionIndex=regions[2][ii];
-            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return this.getOneEdgeFromRegionIndex(regionIndex);
+            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return gameData.getOneEdgeFromRegionIndex(regionIndex);
         }
     }
 
@@ -416,13 +384,13 @@ OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
     if(gameData.scoreRegion.length>2){
         for(var ii in gameData.scoreRegion){
             var region = gameData.connectedRegion[gameData.scoreRegion[ii]]
-            if(region.isRing)return this.getOneEdgeFromRegion(region);
+            if(region.isRing)return gameData.getOneEdgeFromRegion(region);
         }
         return eatOne;
     }
 
     // 两个块且第二个是环
-    if(gameData.scoreRegion.length===2 && gameData.connectedRegion[gameData.scoreRegion[1]].isRing)return this.getOneEdgeFromRegionIndex(gameData.scoreRegion[1]);
+    if(gameData.scoreRegion.length===2 && gameData.connectedRegion[gameData.scoreRegion[1]].isRing)return gameData.getOneEdgeFromRegionIndex(gameData.scoreRegion[1]);
 
     // 两个块
     if(gameData.scoreRegion.length===2)return eatOne;

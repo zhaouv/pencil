@@ -154,7 +154,7 @@ GameData.prototype.clone=function(){
     var game=this
     var _game=new GameData()
     for(var name in game){
-        if(!game.hasOwnProperty(i))continue;
+        if(!game.hasOwnProperty(name))continue;
         _game[name]=game.cloneObj(game[name])
     }
     return _game
@@ -521,4 +521,76 @@ GameData.prototype.putxy=function(x,y){
         game.playerId=1-game.playerId
         return 'changeTurn'
     }
+}
+////////////////// Functions for AIPlayer //////////////////
+GameData.prototype.getOneEdgeFromRegion=function(region){
+    // this region must be in score region
+    // not check here for effectiveness
+    var gameData=this
+    var len = region.block.length
+    var stack = region.block
+    var p1=0
+    var p2=1
+    if(gameData.xy(stack[0].x,stack[0].y)!==gameData.SCORE_3){
+        p1=len-1
+        p2=len-2
+    }
+    if(len>1)return {'x':(stack[p1].x+stack[p2].x)/2,'y':(stack[p1].y+stack[p2].y)/2};
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx=stack[p1].x+d.x, yy=stack[p1].y+d.y
+        if(gameData.xy(xx,yy)!==gameData.EDGE_USED)return {'x':xx,'y':yy};
+    }
+}
+GameData.prototype.getOneEdgeFromRegionIndex=function(regionIndex){
+    // this region must be in score region
+    // not check here for effectiveness
+    return this.getOneEdgeFromRegion(this.connectedRegion[regionIndex])
+}
+GameData.prototype.getAllEdgesFromRegion=function(region){
+    // this region must be in score region
+    // not check here for effectiveness
+    var gameData=this
+    var len = region.block.length
+    var stack = region.block
+    var p1=0
+    var pend=len-1
+    var pd=1
+    if(gameData.xy(stack[0].x,stack[0].y)!==gameData.SCORE_3){
+        p1=len-1
+        pend=0
+        pd=-1
+    }
+    var way=[]
+    for(var p=p1;p!=pend;p+=pd){
+        var q=p+pd
+        way.push({'x':(stack[p].x+stack[q].x)/2,'y':(stack[p].y+stack[q].y)/2})
+    }
+    if(!region.isRing){
+        var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+        for(var ii=0,d;d=directions[ii];ii++){
+            var xx=stack[pend].x+d.x, yy=stack[pend].y+d.y
+            var xxx=stack[pend].x+2*d.x, yyy=stack[pend].y+2*d.y
+            if(gameData.xy(xxx,yyy)=='out range'){
+                way.push({'x':xx,'y':yy})
+                break
+            }
+        }
+    }
+    return way;
+}
+GameData.prototype.getAllEdgesFromRegionIndex=function(regionIndex){
+    // this region must be in score region
+    // not check here for effectiveness
+    return this.getAllEdgesFromRegion(this.connectedRegion[regionIndex])
+}
+GameData.prototype.getMinConnectedRegion=function(){
+    var gameData=this
+    var minRegion=null
+    for(var ii in gameData.connectedRegion){
+        var region = gameData.connectedRegion[ii]
+        if(!region)continue;
+        if(minRegion==null || region.block.length<minRegion.block.length)minRegion=region;
+    }
+    return minRegion
 }
