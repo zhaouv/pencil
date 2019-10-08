@@ -2,7 +2,7 @@
 
 点格棋以及其AI
 
-在线游戏: [link](http://zhaouv.top/pencil/)
+在线游戏: [link](http://zhaouv.net/pencil/)
 
 ## AI
 
