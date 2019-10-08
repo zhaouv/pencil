@@ -95,7 +95,9 @@ TreeSearchAI.prototype.gen = function(gameData,deep){
     //
     if(number!==gameData.EDGE_WILL){
         if(number===gameData.EDGE_NOW && gameData.edgeCount[gameData.EDGE_NOT]===0){
-            var where = this.tryKeepOffensive(gameData,deep)
+            var _tmp = this.tryKeepOffensive(gameData,deep)
+            var where = _tmp[0]
+            var info = _tmp[1]
         }
         else {var where = this.getRandWhere(number)}
     } else {
