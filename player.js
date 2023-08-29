@@ -105,7 +105,7 @@ NetworkPlayer.prototype.remove=function(){
     var index = this.game.changeEdge.indexOf(this.emitPut)
     this.game.changeEdge.splice(index,1)
     this.emitPut=null
-    var index = this.game.changeEdge.indexOf(this.restart)
+    var index = this.game.win.indexOf(this.restart)
     this.game.win.splice(index,1)
     this.restart=null
     this.socket.close()
