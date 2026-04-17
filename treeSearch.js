@@ -198,7 +198,11 @@ TreeSearchAI.prototype.shouldExtendEndgame = function(gameData, stats){
 
 TreeSearchAI.prototype.searchRoot = function(gameData, depth){
     var ttEntry=this.getTranspositionEntry('s',gameData)
-    var routes=this.orderRoutes(this.generateRoutes(gameData),ttEntry,true)
+    var routes=this.generateRoutes(gameData)
+    if(!gameData.edgeCount[gameData.EDGE_NOT]){
+        routes=this.generateExactRoutes(gameData)
+    }
+    routes=this.orderRoutes(routes,ttEntry,true)
     if(!routes.length)return null
     var alpha=-this.MAX_SCORE
     var beta=this.MAX_SCORE

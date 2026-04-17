@@ -28,7 +28,7 @@
   - `TreeSearchAI` 的实验性搜索实现。
   - 当前版本使用 clone-based 回合级路线搜索、alpha-beta、迭代加深、TT、结构评估和无安全步精确收官求解。
   - 已能稳定生成“全吃 / 留最后一口 / 双格链让分 / 四环让分”这类基础路线，并带有“连续无关步快进”和收官延伸搜索骨架。
-  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，修掉了一个 ring4 让分选错的关键点，但强度和性能仍未达标。
+  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错和一个根结点让分被普通候选上限截断的关键点，但强度和性能仍未达标。
 - `server.js`
   - `socket.io` 对战服务器，默认监听 `5050`。
   - 管理随机匹配、指定房间、观战和棋谱广播。
@@ -95,20 +95,21 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
 - 已验证 `ts_cases.js` 固定局面回归可通过：
   - `node ts_cases.js`
   - 其中 `ring4_sacrifice_choice` 当前会固定选出 `1,2`
+  - 其中 `exact_root_sacrifice_choice` 当前会固定选出 `7,2`
 - `exact_score_prefix_control_only` 当前会固定保持：
   - 普通 score prefixes 为 `score-all / score-stop / score-control`
   - exact score prefixes 为 `score-all / score-control`
 - 已验证单局 spot check：
-  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `0:1`，平均步数 `66`，约 `37s`
-  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`，平均步数 `67`，约 `49s`
-  - `time node aivsai.js -1 ts -2 gr -n 1 --seed 123` 为 `1:0`，平均步数 `67`，约 `49s`
+  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `0:1`，平均步数 `72`，约 `28s`
+  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`，平均步数 `67`，约 `38s`
+  - `time node aivsai.js -1 ts -2 gr -n 1 --seed 123` 为 `1:0`，平均步数 `67`，约 `34s`
 - 已验证短样本基准：
   - 上一轮 2+2 自定义短样本基线为：
     - `ts vs ok` 为 `1:3`
     - `ts vs gr` 为 `2:2`
-  - 本轮又补了 `--seed`、无安全步精确收官直切 exact、exact sacrifice route 结构分桶代表化，但尚未重跑同口径 2+2 样本
+  - 本轮又补了 `--seed`、无安全步精确收官直切 exact、`exact_root_sacrifice_choice` 回归，以及“根结点无安全步”直接走 exact 路线集，但尚未重跑同口径 2+2 样本
   - 当前观测到的单点最大 exact 分支有过 `43 -> 26` 的收缩，但最新整局 spot check 仍会遇到 `40` 路左右的 exact 状态
-  - 说明当前版本已经从“性能完全不够”推进到了“Phase 4 初版已接入且收官关键点开始固定、精确分支开始收缩但仍会反弹”的阶段
+  - 说明当前版本已经从“性能完全不够”推进到了“Phase 4 初版已接入，根结点 exact 关键点开始固定，但 exact 内部仍有缺口”的阶段
 - 未验证浏览器页面、网络对战、观战流程。
 - `package.json` 里的 `npm test` 不是测试套件，只是直接运行 `node server.js`，会常驻阻塞。
 
@@ -137,7 +138,8 @@ node aivsai.js -1 ts -2 ok -n 5 -s
 - 现在最小样本 benchmark 可以较稳定完成
 - 但候选较多的收官局面仍会明显变慢
 - 本轮已补 exact TT，并把部分状态的最大 exact 分支从 `43` 压到 `26`
-- 本轮又补了 exact sacrifice route 结构分桶和无安全步直切 exact，但单局 `aivsai.js -n 1` 带 seed spot check 仍在约 `37s` 到 `49s`，且整局里还会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩
+- 本轮又补了根结点无安全步直切 exact 路线集，带 seed 的单局 spot check 已回落到约 `28s` 到 `38s`
+- 但 `seed=1` 这类固定输局仍然存在，说明 exact 内部候选仍不完整，且整局里还会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩
 - 更大样本 benchmark 依然不适合直接放大
 - 后续如果要继续提胜率，必须同时优化：
   - 候选压缩
