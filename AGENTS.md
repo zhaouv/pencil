@@ -1,0 +1,155 @@
+# AGENTS.md
+
+## 项目概况
+
+- 项目是一个点格棋（Dots and Boxes）实现，包含浏览器界面、Node.js 网络对战服务和若干 AI。
+- 代码风格是老式全局脚本，不使用构建工具、模块打包器、测试框架，也没有 lockfile。
+- 运行时主要分两类：
+  - 浏览器端：`index.html` 直接加载脚本。
+  - Node 端：`server.js`、`aivsai.js`。
+
+## 主要文件职责
+
+- `index.html`
+  - 主页面，直接提供本地对局、AI 对局、网络对战入口。
+  - 依赖 `game.js`、`gamedata.js`、`player.js`、`treeSearch.js` 和 `socket.io/socket.io.js`。
+- `game.js`
+  - 核心棋盘规则 `Game`。
+  - 浏览器 UI 控制 `gameview`。
+  - 录像回放控制器 `ReplayController`。
+- `gamedata.js`
+  - 从 `Game` 派生给 AI 使用的盘面数据结构 `GameData`。
+  - 维护边分类、联通区域、区域取边、安全步结构分析，以及 Phase 4 结构评估特征抽取等 AI 辅助能力。
+- `player.js`
+  - 玩家抽象 `GamePlayer`。
+  - 本地玩家、网络玩家、AI 基类。
+  - `GreedyRandomAI` 和 `OffensiveKeeperAI`。
+- `treeSearch.js`
+  - `TreeSearchAI` 的实验性搜索实现。
+  - 当前版本使用 clone-based 回合级路线搜索、alpha-beta、迭代加深、TT、结构评估和无安全步精确收官求解。
+  - 已能稳定生成“全吃 / 留最后一口 / 双格链让分 / 四环让分”这类基础路线，并带有“连续无关步快进”和收官延伸搜索骨架。
+  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，修掉了一个 ring4 让分选错的关键点，但强度和性能仍未达标。
+- `server.js`
+  - `socket.io` 对战服务器，默认监听 `5050`。
+  - 管理随机匹配、指定房间、观战和棋谱广播。
+- `aivsai.js`
+  - 新增但尚未提交的 Node CLI，用于 AI vs AI 批量对战和录像导出。
+- `ts_cases.js`
+  - Node 下的固定局面回归脚本，用于检查 `TreeSearchAI` 的结构评估特征、无安全步收官判断、关键让分选择和 exact score prefix 假设。
+
+## 实际可用入口
+
+### 1. 纯本地 AI 对战
+
+当前最容易验证的入口是：
+
+```bash
+node aivsai.js -n 5
+```
+
+已实际跑通，输出结果为：
+
+```text
+OffensiveKeeperAI(先手) vs GreedyRandomAI(后手) 6x6 5局
+结果: OK 4胜 GR 1负
+```
+
+### 2. 网络对战服务
+
+目标运行方式仍然是：
+
+```bash
+npm install
+node server.js
+```
+
+但当前工作区尚未安装依赖，所以这条路径还没有在本地重新验证。
+
+## 已验证结果
+
+- 已验证核心脚本可被 Node 正常加载：
+
+```bash
+node -e "require('./game.js'); require('./gamedata.js'); require('./player.js'); require('./treeSearch.js'); console.log('core ok')"
+```
+
+- 已验证 `aivsai.js` 在默认 AI 组合下可运行。
+- 已验证 `TreeSearchAI` 现在可以完整跑完对局，不再是一上来就报错的原型状态。
+- 已验证 `TreeSearchAI` 的回合级路线 + 搜索核心版本至少能稳定跑完最小回归：
+  - `node aivsai.js -1 ts -2 gr -n 1`
+  - `node aivsai.js -1 ts -2 ok -n 1`
+- 已验证 `ts_cases.js` 固定局面回归可通过：
+  - `node ts_cases.js`
+  - 其中 `ring4_sacrifice_choice` 当前会固定选出 `1,2`
+- `exact_score_prefix_control_only` 当前会固定保持：
+  - 普通 score prefixes 为 `score-all / score-stop / score-control`
+  - exact score prefixes 为 `score-all / score-control`
+- 已验证单局 spot check：
+  - 近期 `time node aivsai.js -1 ts -2 ok -n 1` 约在 `29s` 到 `38s`，样本结果有过 `0:1`
+  - 近期 `time node aivsai.js -1 ts -2 gr -n 1` 约在 `27s` 到 `33s`，样本结果有过 `1:0`
+- 已验证短样本基准：
+  - 上一轮 2+2 自定义短样本基线为：
+    - `ts vs ok` 为 `1:3`
+    - `ts vs gr` 为 `2:2`
+  - 本轮又补了无安全步精确收官分支修正、`ring4_sacrifice_choice` / `exact_score_prefix_control_only` 回归、exact score prefix 去重和 exact TT，但尚未重跑同口径 2+2 样本
+  - 当前观测到的单点最大 exact 分支有过 `43 -> 26` 的收缩，但最新整局 spot check 仍会遇到 `40` 路左右的 exact 状态
+  - 说明当前版本已经从“性能完全不够”推进到了“Phase 4 初版已接入且收官关键点开始固定、精确分支开始收缩但仍会反弹”的阶段
+- 未验证浏览器页面、网络对战、观战流程。
+- `package.json` 里的 `npm test` 不是测试套件，只是直接运行 `node server.js`，会常驻阻塞。
+
+## 已知问题
+
+### 1. `TreeSearchAI` 距目标强度仍有明显差距
+
+最小验证：
+
+```bash
+node aivsai.js -1 ts -2 ok -n 5 -s
+```
+
+当前 `TreeSearchAI` 已经进入“回合级路线搜索 + 搜索核心优化 + Phase 4 结构评估初版”的下一阶段，但还没有达到计划里的目标：
+
+- 目标是对 `ok` 达到 `80%` 胜率
+- 上一轮 2+2 短样本基线仍明显不稳：
+  - 对 `ok` 为 `1:3`
+  - 对 `gr` 也为 `2:2`
+- 说明“候选单位升级”“搜索内核升级”和“评估显式化”都已开始，但“强度建模”还远没有完成
+
+### 2. clone-based 搜索性能偏慢
+
+当前 `TreeSearchAI` 仍主要依赖 `GameData.clone()` 推进搜索，但已补了状态缓存和定制 `clone()`。
+
+- 现在最小样本 benchmark 可以较稳定完成
+- 但候选较多的收官局面仍会明显变慢
+- 本轮已补 exact TT，并把部分状态的最大 exact 分支从 `43` 压到 `26`
+- 但单局 `aivsai.js -n 1` spot check 仍在约 `30s` 到 `40s`，且整局里还会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩
+- 更大样本 benchmark 依然不适合直接放大
+- 后续如果要继续提胜率，必须同时优化：
+  - 候选压缩
+  - 搜索深度控制
+  - 评估函数
+  - 可能更轻量的状态 key / undo 机制
+
+### 3. README 和当前实现仍有偏差
+
+- README 里“网络对战目前状态是能够运行”是历史描述，不代表当前工作区已经可直接运行。
+
+## 后续修改建议
+
+- 优先保持现有“浏览器直接加载 + Node 直接运行”的结构，不要无故引入打包链。
+- 代码大量依赖全局变量和原型链；改动时先确认浏览器和 Node 两边是否都受影响。
+- 只要代码行为、运行方式、能力边界或已知问题发生变化，就同步更新相关文档；当前先保持 `AGENTS.md` 和专项计划文档与实现一致，`README.md` 暂不修改，后续再统一回补。
+- 如果要补验证，建议顺序如下：
+  1. `npm install`
+  2. 验证 `node server.js`
+  3. 验证浏览器网络对战
+  4. 继续优化 `TreeSearchAI` 的候选生成、评估函数和性能
+
+## 推荐的最小回归检查
+
+- `node aivsai.js -n 5`
+- `node aivsai.js -1 ok -2 gr -n 5 -s`
+- `node ts_cases.js`
+- `node -e "require('./game.js'); require('./gamedata.js'); require('./player.js'); require('./treeSearch.js'); console.log('core ok')"`
+
+如果这些都通过，再继续做更完整的联机回归检查。

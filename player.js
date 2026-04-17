@@ -349,7 +349,18 @@ OffensiveKeeperAI.prototype.constructor = OffensiveKeeperAI
 
 OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
     var gameData=this.gameData
-    var eatOne = gameData.getOneEdgeFromRegionIndex(gameData.scoreRegion[0]) // >随便吃一块时的值
+    var scoreRegions=gameData.scoreRegion.filter(function(regionIndex){
+        return !!gameData.connectedRegion[regionIndex]
+    })
+    gameData.scoreRegion=scoreRegions
+    if(!scoreRegions.length){
+        return this.getRandWhere(gameData.EDGE_NOW)
+    }
+
+    var eatOne = gameData.getOneEdgeFromRegionIndex(scoreRegions[0]) // >随便吃一块时的值
+    if(!eatOne){
+        return this.getRandWhere(gameData.EDGE_NOW)
+    }
 
     // 最后一块直接吃掉
     if(gameData.regionNum==1) return eatOne;
@@ -373,30 +384,35 @@ OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
     }
 
     // 有得分双块且还有别的能得分的块
-    if(regions[2] && gameData.scoreRegion.length>1){
+    if(regions[2] && scoreRegions.length>1){
         for(var ii=0;ii<regions[2].length;ii++){
             var regionIndex=regions[2][ii];
-            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return gameData.getOneEdgeFromRegionIndex(regionIndex);
+            if(scoreRegions.indexOf(regionIndex)!==-1)return gameData.getOneEdgeFromRegionIndex(regionIndex);
         }
     }
 
     // 多于两个块按先吃环的顺序吃掉一个
-    if(gameData.scoreRegion.length>2){
-        for(var ii in gameData.scoreRegion){
-            var region = gameData.connectedRegion[gameData.scoreRegion[ii]]
+    if(scoreRegions.length>2){
+        for(var ii in scoreRegions){
+            var region = gameData.connectedRegion[scoreRegions[ii]]
+            if(!region)continue;
             if(region.isRing)return gameData.getOneEdgeFromRegion(region);
         }
         return eatOne;
     }
 
     // 两个块且第二个是环
-    if(gameData.scoreRegion.length===2 && gameData.connectedRegion[gameData.scoreRegion[1]].isRing)return gameData.getOneEdgeFromRegionIndex(gameData.scoreRegion[1]);
+    if(scoreRegions.length===2){
+        var region2=gameData.connectedRegion[scoreRegions[1]]
+        if(region2 && region2.isRing)return gameData.getOneEdgeFromRegionIndex(scoreRegions[1]);
+    }
 
     // 两个块
-    if(gameData.scoreRegion.length===2)return eatOne;
+    if(scoreRegions.length===2)return eatOne;
     
     // >此时只有一个块了
-    var region=gameData.connectedRegion[gameData.scoreRegion[0]];
+    var region=gameData.connectedRegion[scoreRegions[0]];
+    if(!region)return eatOne;
 
     // 长度不是4的环
     if(region.isRing && region.block.length!==4)return eatOne;
@@ -420,6 +436,5 @@ OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
         if(gameData.xy(xx,yy)!==gameData.EDGE_USED && gameData.xy(xxx,yyy)=='out range')return {'x':xx,'y':yy};
     }
 
-    console.log('bug:理论上不应该走到这里')
     return eatOne;
 }

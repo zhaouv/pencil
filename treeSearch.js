@@ -1,181 +1,609 @@
 
 ////////////////// TreeSearchAI //////////////////
 TreeSearchAI=function(){
-    AIPlayer.call(this)
+    GreedyRandomAI.call(this)
     return this
 }
-TreeSearchAI.prototype = Object.create(AIPlayer.prototype)
+TreeSearchAI.prototype = Object.create(GreedyRandomAI.prototype)
 TreeSearchAI.prototype.constructor = TreeSearchAI
 
-//player1 = new TreeSearchAI().init(gameview.game,gameview).bind(1-first2);player1.gameData
-//console.log(new GameData().fromGame(gameview.game),player1.gameData)
-
-TreeSearchAI.prototype.changeTurn=function(){
-    this.game.lock=0
-}
-TreeSearchAI.prototype.continueTurn=function(){
-    this.game.lock=0
-}
-
-TreeSearchAI.prototype.SEARCH_DEPTH=10
-TreeSearchAI.prototype.WIN_SCORE=1
-TreeSearchAI.prototype.BALANCE_POINT=0
-TreeSearchAI.prototype.EVALUATE_AI=OffensiveKeeperAI
-TreeSearchAI.prototype.EVALUATE_TIMES=100
+TreeSearchAI.prototype.SEARCH_DEPTH=3
+TreeSearchAI.prototype.QUIESCENCE_DEPTH=10
+TreeSearchAI.prototype.ENDGAME_DEPTH=16
+TreeSearchAI.prototype.ENDGAME_SAFE_EDGE_THRESHOLD=6
+TreeSearchAI.prototype.EXACT_SAFE_EDGE_LIMIT=1
+TreeSearchAI.prototype.MAX_SCORE=100000000
+TreeSearchAI.prototype.SAFE_ROUTE_LIMIT=8
+TreeSearchAI.prototype.SACRIFICE_ROUTE_LIMIT=6
+TreeSearchAI.prototype.SCORE_ROUTE_LIMIT=12
+TreeSearchAI.prototype.TURN_END_ROUTE_LIMIT=4
+TreeSearchAI.prototype.IRRELEVANT_SKIP_LIMIT=12
+TreeSearchAI.prototype.TIME_BUDGET_MS=0
+TreeSearchAI.prototype.NODE_BUDGET=0
 
 TreeSearchAI.prototype.where = function(){
-    if(this.way==undefined || this.way.length==0){
-        this.way=[]
-        this.negamax_count=0
-        this.evaluate_count=0
-        this.ABcut=0
-        search_depth=this.search_depth!=undefined?this.search_depth:this.SEARCH_DEPTH
-        this.negamax(this.gameData,search_depth,-Infinity,Infinity)
+    var boardKey=this.gameData.getBoardKey()
+    if(this.routePlan && this.routePlan.length && this.routePlan[0].key===boardKey){
+        return this.routePlan.shift().move
     }
-    return this.way.shift();
-}
 
-TreeSearchAI.prototype.put = function(gameData,way){
-    for(var ii=0,where;where=way[ii];ii++)gameData.putxy(where.x,where.y);
-}
-
-TreeSearchAI.prototype.recover = function(gameData,newGameData,way){
-    return gameData;
-}
-
-TreeSearchAI.prototype.negamax = function(gameData, deep, alpha, beta){
-    this.negamax_count++
-    if(gameData.winnerId!=null)return ~~(gameData.winnerId==this.playerId);
-    if(deep<=0)return this.evaluate(gameData);
-    var best=-Infinity;
-    var ways=this.gen(gameData,deep);
-    for(var ii=0,way;way=ways[ii];ii++){
-        var newGameData=this.put(gameData,way)
-        // ?add hash
-        var value=-negamax(newGameData, deep-1, -beta, -alpha)
-        gameData=this.recover(gameData,newGameData,way)
-        if(value>best){
-            best=value;
-            this.way=way
-            if(best==this.WIN_SCORE)return this.WIN_SCORE;
-        }
-        alpha=Math.max(best,alpha)
-        if(value>=beta){
-            this.ABcut++
-            return value;
-        }
-        // ?add DFS search when deep<=2
+    var maxDepth=this.search_depth!=undefined?this.search_depth:this.SEARCH_DEPTH
+    var timeBudgetMs=this.timeBudgetMs!=undefined?this.timeBudgetMs:this.TIME_BUDGET_MS
+    var nodeBudget=this.nodeBudget!=undefined?this.nodeBudget:this.NODE_BUDGET
+    this.routePlan=[]
+    this.transposition={}
+    this.historyTable={}
+    this.exactEndgameCache={}
+    this.abortToken={}
+    this.searchDeadline=timeBudgetMs>0?Date.now()+timeBudgetMs:0
+    this.searchNodeBudget=nodeBudget>0?nodeBudget:0
+    this.searchStats={
+        node:0,
+        cacheHit:0,
+        cut:0,
+        ttCut:0,
+        completedDepth:0,
+        aborted:false,
     }
-    return best;
-}
 
-TreeSearchAI.prototype.evaluate = function(gameData){
-    this.evaluate_count++
-    var ai=new this.EVALUATE_AI()
-    var wincount=0
-    for(var ii=0;ii<this.EVALUATE_TIMES;ii++){
-        ai.gameData=gameData.clone()
-        var where=ai.where()
-        while(ai.gameData.putxy(where.x,where.y)!='win'){
-            where=ai.where()
+    var best=null
+    for(var depth=1;depth<=maxDepth;depth++){
+        this.searchStats.iterationDepth=depth
+        try{
+            var current=this.searchRoot(this.gameData,depth)
+            if(current && current.route){
+                best=current
+                this.searchStats.completedDepth=depth
+            }
+        } catch(e){
+            if(e!==this.abortToken)throw e
+            this.searchStats.aborted=true
+            break
         }
-        if(ai.gameData.winnerId==this.playerId)wincount++;
     }
-    return (wincount/this.EVALUATE_TIMES-0.5)*2;
+    this.lastSearchStats=this.searchStats
+    if(best && best.route && best.route.moves && best.route.moves.length){
+        this.routePlan=this.buildRoutePlan(this.gameData,best.route.moves)
+        if(this.routePlan.length && this.routePlan[0].key===boardKey){
+            return this.routePlan.shift().move
+        }
+    }
+    return this.getFallbackWhere(this.gameData)
 }
 
-/**
- * @returns {Array.<Array.<{x:Number,y:Number}>>} 路线列表, 路线是坐标的列表
- */
-TreeSearchAI.prototype.gen = function(gameData,deep){
-    var number = gameData.EDGE_NOW
-    if(gameData.edgeCount[gameData.EDGE_NOW]){number = gameData.EDGE_NOW} //有得分块
-    else if(gameData.edgeCount[gameData.EDGE_NOT]){number = gameData.EDGE_NOT} //无法得分且无需让分
-    else {number = gameData.EDGE_WILL} //需让分
-    //
-    if(number!==gameData.EDGE_WILL){
-        if(number===gameData.EDGE_NOW && gameData.edgeCount[gameData.EDGE_NOT]===0){
-            var _tmp = this.tryKeepOffensive(gameData,deep)
-            var where = _tmp[0]
-            var info = _tmp[1]
+TreeSearchAI.prototype.buildRoutePlan = function(gameData, moves){
+    if(!this.isValidRouteMoves(moves))return []
+    var current=gameData.clone()
+    var plan=[]
+    for(var ii=0;ii<moves.length;ii++){
+        var move=moves[ii]
+        plan.push({
+            key:current.getBoardKey(),
+            move:{'x':move.x,'y':move.y},
+        })
+        current.putxy(move.x,move.y)
+        if(current.winnerId!=null)break
+    }
+    return plan
+}
+
+TreeSearchAI.prototype.isValidMove = function(move){
+    return !!move && move.x!=null && move.y!=null
+}
+
+TreeSearchAI.prototype.isValidRouteMoves = function(moves){
+    if(!moves || !moves.length)return false
+    for(var ii=0;ii<moves.length;ii++){
+        var move=moves[ii]
+        if(!this.isValidMove(move))return false
+    }
+    return true
+}
+
+TreeSearchAI.prototype.checkSearchAbort = function(){
+    if(this.searchNodeBudget && this.searchStats.node>=this.searchNodeBudget){
+        this.searchStats.abortReason='node'
+        throw this.abortToken
+    }
+    if(this.searchDeadline && Date.now()>this.searchDeadline){
+        this.searchStats.abortReason='time'
+        throw this.abortToken
+    }
+}
+
+TreeSearchAI.prototype.getTranspositionEntry = function(prefix, gameData){
+    return this.transposition[prefix+'|'+gameData.getBoardKey()]
+}
+
+TreeSearchAI.prototype.lookupTransposition = function(prefix, gameData, depth, alpha, beta){
+    var entry=this.getTranspositionEntry(prefix,gameData)
+    if(!entry || entry.depth<depth){
+        return {
+            alpha:alpha,
+            beta:beta,
+            entry:entry||null,
         }
-        else {var where = this.getRandWhere(number)}
+    }
+    this.searchStats.cacheHit++
+    if(entry.flag==='exact'){
+        return {
+            hit:true,
+            value:entry.value,
+            alpha:alpha,
+            beta:beta,
+            entry:entry,
+        }
+    }
+    if(entry.flag==='lower' && entry.value>alpha)alpha=entry.value
+    if(entry.flag==='upper' && entry.value<beta)beta=entry.value
+    if(alpha>=beta){
+        this.searchStats.ttCut++
+        return {
+            hit:true,
+            value:entry.value,
+            alpha:alpha,
+            beta:beta,
+            entry:entry,
+        }
+    }
+    return {
+        alpha:alpha,
+        beta:beta,
+        entry:entry,
+    }
+}
+
+TreeSearchAI.prototype.storeTransposition = function(prefix, gameData, depth, value, alphaOrig, betaOrig, bestRoute){
+    var flag='exact'
+    if(value<=alphaOrig){
+        flag='upper'
+    } else if(value>=betaOrig){
+        flag='lower'
+    }
+    this.transposition[prefix+'|'+gameData.getBoardKey()]={
+        depth:depth,
+        value:value,
+        flag:flag,
+        bestStateKey:bestRoute?bestRoute.stateKey:null,
+    }
+}
+
+TreeSearchAI.prototype.orderRoutes = function(routes, ttEntry){
+    var historyTable=this.historyTable||{}
+    var bestStateKey=ttEntry && ttEntry.bestStateKey
+    return routes.slice().sort(function(a,b){
+        var att=bestStateKey && a.stateKey===bestStateKey?1:0
+        var btt=bestStateKey && b.stateKey===bestStateKey?1:0
+        if(att!==btt)return btt-att
+        var ah=historyTable[a.stateKey]||0
+        var bh=historyTable[b.stateKey]||0
+        if(ah!==bh)return bh-ah
+        return b.order-a.order
+    })
+}
+
+TreeSearchAI.prototype.recordHistory = function(route, depth){
+    if(!route || !route.stateKey)return
+    this.historyTable[route.stateKey]=(this.historyTable[route.stateKey]||0)+depth*depth
+}
+
+TreeSearchAI.prototype.shouldExtendEndgame = function(gameData, stats){
+    stats=stats||gameData.getRegionStats()
+    return (
+        gameData.isEndgamePhase() ||
+        gameData.edgeCount[gameData.EDGE_NOT]<=this.ENDGAME_SAFE_EDGE_THRESHOLD
+    ) && stats.largeClosedNum>0
+}
+
+TreeSearchAI.prototype.searchRoot = function(gameData, depth){
+    var ttEntry=this.getTranspositionEntry('s',gameData)
+    var routes=this.orderRoutes(this.generateRoutes(gameData),ttEntry)
+    if(!routes.length)return null
+    var alpha=-this.MAX_SCORE
+    var beta=this.MAX_SCORE
+    var bestRoute=routes[0]
+    var bestValue=-this.MAX_SCORE
+    for(var ii=0,route;route=routes[ii];ii++){
+        this.checkSearchAbort()
+        var next=route.state||this.applyRouteToClone(gameData,route.moves)
+        if(!next)continue
+        this.advanceIrrelevantState(next,this.IRRELEVANT_SKIP_LIMIT)
+        var value=this.searchState(next,depth-1,alpha,beta)
+        if(value>bestValue){
+            bestValue=value
+            bestRoute=route
+        }
+        if(value>alpha)alpha=value
+    }
+    return {
+        route:bestRoute,
+        value:bestValue,
+    }
+}
+
+TreeSearchAI.prototype.searchState = function(gameData, depth, alpha, beta){
+    this.searchStats.node++
+    this.checkSearchAbort()
+    this.advanceIrrelevantState(gameData,this.IRRELEVANT_SKIP_LIMIT)
+    if(gameData.winnerId!=null){
+        return this.getTerminalScore(gameData)
+    }
+    if(depth<=0){
+        return this.searchQuiescence(
+            gameData,
+            this.shouldExtendEndgame(gameData)?this.ENDGAME_DEPTH:this.QUIESCENCE_DEPTH,
+            alpha,
+            beta
+        )
+    }
+
+    var alphaOrig=alpha
+    var betaOrig=beta
+    var ttInfo=this.lookupTransposition('s',gameData,depth,alpha,beta)
+    if(ttInfo.hit){
+        return ttInfo.value
+    }
+    alpha=ttInfo.alpha
+    beta=ttInfo.beta
+
+    var routes=this.orderRoutes(this.generateRoutes(gameData),ttInfo.entry)
+    if(!routes.length){
+        return this.evaluate(gameData)
+    }
+
+    var maximizing=gameData.playerId===this.playerId
+    var best=maximizing?-this.MAX_SCORE:this.MAX_SCORE
+    var bestRoute=null
+    for(var ii=0,route;route=routes[ii];ii++){
+        this.checkSearchAbort()
+        var next=route.state||this.applyRouteToClone(gameData,route.moves)
+        if(!next)continue
+        var value=this.searchState(next,depth-1,alpha,beta)
+        if(maximizing){
+            if(value>best){
+                best=value
+                bestRoute=route
+            }
+            if(best>alpha)alpha=best
+            if(alpha>=beta){
+                this.searchStats.cut++
+                this.recordHistory(route,depth)
+                break
+            }
+            continue
+        }
+        if(value<best){
+            best=value
+            bestRoute=route
+        }
+        if(best<beta)beta=best
+        if(alpha>=beta){
+            this.searchStats.cut++
+            this.recordHistory(route,depth)
+            break
+        }
+    }
+    this.storeTransposition('s',gameData,depth,best,alphaOrig,betaOrig,bestRoute)
+    return best
+}
+
+TreeSearchAI.prototype.searchQuiescence = function(gameData, depth, alpha, beta){
+    this.searchStats.node++
+    this.checkSearchAbort()
+    this.advanceIrrelevantState(gameData,this.IRRELEVANT_SKIP_LIMIT)
+    if(gameData.winnerId!=null){
+        return this.getTerminalScore(gameData)
+    }
+    var stats=gameData.getRegionStats()
+    var stand=this.evaluate(gameData)
+    var shouldContinue=gameData.edgeCount[gameData.EDGE_NOW] || this.shouldExtendEndgame(gameData,stats)
+    if(depth<=0 || !shouldContinue){
+        return stand
+    }
+
+    var alphaOrig=alpha
+    var betaOrig=beta
+    var ttInfo=this.lookupTransposition('q',gameData,depth,alpha,beta)
+    if(ttInfo.hit){
+        return ttInfo.value
+    }
+    alpha=ttInfo.alpha
+    beta=ttInfo.beta
+    var maximizing=gameData.playerId===this.playerId
+    if(maximizing){
+        if(stand>alpha)alpha=stand
     } else {
-        var minRegion=null
-        for(var ii in gameData.connectedRegion){
-            var region = gameData.connectedRegion[ii]
-            if(!region)continue;
-            if(minRegion==null || region.block.length<minRegion.block.length)minRegion=region;
-        }
-        var where = gameData.getOneEdgeFromRegion(minRegion)
+        if(stand<beta)beta=stand
     }
-    return [[where]]
+    if(alpha>=beta){
+        return stand
+    }
+
+    var routes=this.orderRoutes(this.generateRoutes(gameData),ttInfo.entry)
+    if(!routes.length){
+        return stand
+    }
+
+    var best=stand
+    var bestRoute=null
+    for(var ii=0,route;route=routes[ii];ii++){
+        this.checkSearchAbort()
+        var next=route.state||this.applyRouteToClone(gameData,route.moves)
+        if(!next)continue
+        var value=this.searchQuiescence(next,depth-1,alpha,beta)
+        if(maximizing){
+            if(value>best){
+                best=value
+                bestRoute=route
+            }
+            if(best>alpha)alpha=best
+            if(alpha>=beta){
+                this.recordHistory(route,depth)
+                break
+            }
+            continue
+        }
+        if(value<best){
+            best=value
+            bestRoute=route
+        }
+        if(best<beta)beta=best
+        if(alpha>=beta){
+            this.recordHistory(route,depth)
+            break
+        }
+    }
+    this.storeTransposition('q',gameData,depth,best,alphaOrig,betaOrig,bestRoute)
+    return best
 }
 
-/**
- * @returns {[Array.<Array.<{x:Number,y:Number}>>,Object]} [路线列表,信息], 路线是坐标的列表, 根据信息进一步处理列表
- */
-TreeSearchAI.prototype.tryKeepOffensive=function(gameData,deep){
-    var eatOne = gameData.getOneEdgeFromRegionIndex(gameData.scoreRegion[0]) // >随便吃一块时的值
+TreeSearchAI.prototype.getTerminalScore = function(gameData){
+    if(gameData.winnerId==null)return 0
+    return gameData.winnerId===this.playerId?this.MAX_SCORE:-this.MAX_SCORE
+}
 
-    // 最后一块直接吃掉
-    if(gameData.regionNum==1) return [[gameData.getAllEdgesFromRegionIndex(gameData.scoreRegion[0])],{finish:true,onlythis:true}];
-
-    // >按照大小分类
-    var regions={};
-    for(var ii in gameData.connectedRegion){
-        var region = gameData.connectedRegion[ii]
-        if(!region)continue;
-        var len = region.block.length
-        regions[len]=regions[len]||[]
-        regions[len].push(region.index)
+TreeSearchAI.prototype.advanceIrrelevantState = function(gameData, limit){
+    var rest=limit||0
+    while(rest>0 && gameData.winnerId==null){
+        if(gameData.edgeCount[gameData.EDGE_NOW])break
+        if(!gameData.edgeCount[gameData.EDGE_NOT])break
+        var analyses=gameData.getSafeEdgeAnalyses()
+        if(!analyses.length)break
+        var onlyIrrelevant=true
+        for(var ii=0,item;item=analyses[ii];ii++){
+            if(!item.isIrrelevant){
+                onlyIrrelevant=false
+                break
+            }
+        }
+        if(!onlyIrrelevant)break
+        gameData.putxy(analyses[0].edge.x,analyses[0].edge.y)
+        rest--
     }
+}
 
-    // 有得分单块
-    if(regions[1]){
-        for(var ii=0;ii<regions[1].length;ii++){
-            var regionIndex=regions[1][ii];
-            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return gameData.getOneEdgeFromRegionIndex(regionIndex);
+TreeSearchAI.prototype.applyRouteToClone = function(gameData, moves){
+    var next=gameData.clone()
+    if(!this.applyRouteInPlace(next,moves))return null
+    return next
+}
+
+TreeSearchAI.prototype.applyRouteInPlace = function(gameData, moves){
+    for(var ii=0;ii<moves.length;ii++){
+        var move=moves[ii]
+        if(!this.isValidMove(move))return false
+        if(
+            [gameData.EDGE_NOW,gameData.EDGE_NOT,gameData.EDGE_WILL]
+            .indexOf(gameData.xy(move.x,move.y))===-1
+        )return false
+        gameData.putxy(move.x,move.y)
+    }
+    return true
+}
+
+TreeSearchAI.prototype.generateRoutes = function(gameData){
+    if(gameData.edgeCount[gameData.EDGE_NOW]){
+        return this.generateScoreRoutes(gameData)
+    }
+    if(gameData.edgeCount[gameData.EDGE_NOT]){
+        return this.generateSafeRoutes(gameData)
+    }
+    return this.generateSacrificeRoutes(gameData)
+}
+
+TreeSearchAI.prototype.generateScoreRoutes = function(gameData){
+    var prefixes=this.generateScorePrefixes(gameData)
+    var routes=[]
+    for(var ii=0,prefix;prefix=prefixes[ii];ii++){
+        if(prefix.state.winnerId!=null || prefix.state.playerId!==gameData.playerId){
+            var directRoute=this.makeRouteCandidate(gameData,prefix.state,prefix.moves,prefix.tag)
+            if(directRoute)routes.push(directRoute)
+            continue
+        }
+
+        var enders=this.generateTurnEnderRoutes(prefix.state)
+        if(!enders.length){
+            continue
+        }
+
+        for(var jj=0,ender;ender=enders[jj];jj++){
+            var route=this.makeRouteCandidate(
+                gameData,
+                ender.state,
+                prefix.moves.concat(ender.moves),
+                prefix.tag+'+'+ender.tag
+            )
+            if(route)routes.push(route)
+        }
+    }
+    return this.collectRepresentativeRoutes(routes,this.SCORE_ROUTE_LIMIT)
+}
+
+TreeSearchAI.prototype.generateScorePrefixes = function(gameData){
+    var prefixes=[]
+    var regions=this.getActiveScoreRegions(gameData)
+    var allPrefix=this.buildScorePrefix(gameData,{
+        type:'all',
+        tag:'score-all',
+    })
+    if(allPrefix)prefixes.push(allPrefix)
+    if(!regions.length)return prefixes
+    for(var ii=0,region;region=regions[ii];ii++){
+        var stopPrefix=this.buildScorePrefix(gameData,{
+            type:'stopBeforeLast',
+            tag:'score-stop',
+            regionIndex:region.index,
+        })
+        if(stopPrefix)prefixes.push(stopPrefix)
+
+        var controlPrefix=this.buildScorePrefix(gameData,{
+            type:'control',
+            tag:'score-control',
+            regionIndex:region.index,
+        })
+        if(controlPrefix)prefixes.push(controlPrefix)
+    }
+    return prefixes
+}
+
+TreeSearchAI.prototype.generateExactScorePrefixes = function(gameData){
+    var prefixes=[]
+    var regions=this.getActiveScoreRegions(gameData)
+    var allPrefix=this.buildScorePrefix(gameData,{
+        type:'all',
+        tag:'score-all',
+    })
+    if(allPrefix)prefixes.push(allPrefix)
+    if(!regions.length)return prefixes
+    for(var ii=0,region;region=regions[ii];ii++){
+        var controlPrefix=this.buildScorePrefix(gameData,{
+            type:'control',
+            tag:'score-control',
+            regionIndex:region.index,
+        })
+        if(controlPrefix){
+            prefixes.push(controlPrefix)
+            continue
+        }
+
+        var stopPrefix=this.buildScorePrefix(gameData,{
+            type:'stopBeforeLast',
+            tag:'score-stop',
+            regionIndex:region.index,
+        })
+        if(stopPrefix)prefixes.push(stopPrefix)
+    }
+    return prefixes
+}
+
+TreeSearchAI.prototype.buildScorePrefix = function(gameData, policy){
+    var current=gameData.clone()
+    var moves=[]
+    var rootPlayer=gameData.playerId
+    var guard=0
+    var targetIndex=policy.regionIndex
+
+    while(current.winnerId==null && current.playerId===rootPlayer && current.edgeCount[current.EDGE_NOW]){
+        guard++
+        if(guard>current.totalScore*2)return null
+
+        var regions=this.getActiveScoreRegions(current)
+        if(!regions.length)break
+
+        var targetRegion=null
+        if(targetIndex!=null){
+            targetRegion=this.findRegionByIndex(regions,targetIndex)
+            if(!targetRegion){
+                if(policy.type==='all'){
+                    targetIndex=null
+                } else {
+                    break
+                }
+            }
+            if(targetIndex!=null){
+                targetRegion=this.findRegionByIndex(regions,targetIndex)
+            }
+        }
+
+        var nextMoves=null
+        var shouldStop=false
+        var hasNonTarget=false
+        if(targetRegion){
+            hasNonTarget=regions.some(function(region){
+                return region.index!==targetRegion.index
+            })
+        }
+
+        if(policy.type==='all' && targetRegion){
+            nextMoves=this.getAllEatMoves(current,targetRegion)
+            targetIndex=null
+        } else if(policy.type==='all'){
+            nextMoves=this.getAllEatMoves(current,this.chooseScoreRegionToFinish(current,regions))
+        } else if(targetRegion && policy.type==='takeOne'){
+            nextMoves=this.getScorePrefixMoves(current,targetRegion,policy.type)
+            shouldStop=true
+        } else if(targetRegion && !hasNonTarget){
+            nextMoves=this.getScorePrefixMoves(current,targetRegion,policy.type)
+            shouldStop=true
+        } else if(targetRegion){
+            nextMoves=this.getAllEatMoves(
+                current,
+                this.chooseScoreRegionToFinish(current,regions,targetRegion.index)
+            )
+        }
+
+        if(!this.isValidRouteMoves(nextMoves))return null
+        if(!this.applyRouteInPlace(current,nextMoves))return null
+        moves=moves.concat(nextMoves)
+
+        if(shouldStop){
+            break
         }
     }
 
-    // 有得分双块且还有别的能得分的块
-    if(regions[2] && gameData.scoreRegion.length>1){
-        for(var ii=0;ii<regions[2].length;ii++){
-            var regionIndex=regions[2][ii];
-            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return gameData.getOneEdgeFromRegionIndex(regionIndex);
-        }
+    if(!moves.length)return null
+    return {
+        moves:moves,
+        state:current,
+        tag:policy.tag,
+    }
+}
+
+TreeSearchAI.prototype.getAllEatMoves = function(gameData, region){
+    if(!region)return null
+    return gameData.getAllEdgesFromRegion(region)
+}
+
+TreeSearchAI.prototype.getScorePrefixMoves = function(gameData, region, type){
+    if(!region)return null
+    if(type==='takeOne'){
+        var one=gameData.getOneEdgeFromRegion(region)
+        return one?[one]:null
     }
 
-    // 多于两个块按先吃环的顺序吃掉一个
-    if(gameData.scoreRegion.length>2){
-        for(var ii in gameData.scoreRegion){
-            var region = gameData.connectedRegion[gameData.scoreRegion[ii]]
-            if(region.isRing)return gameData.getOneEdgeFromRegion(region);
-        }
-        return eatOne;
+    var fullRoute=gameData.getAllEdgesFromRegion(region)
+    if(type==='stopBeforeLast'){
+        if(!fullRoute || fullRoute.length<=1)return null
+        return fullRoute.slice(0,-1)
     }
 
-    // 两个块且第二个是环
-    if(gameData.scoreRegion.length===2 && gameData.connectedRegion[gameData.scoreRegion[1]].isRing)return gameData.getOneEdgeFromRegionIndex(gameData.scoreRegion[1]);
+    if(type==='control'){
+        var controlMove=this.getControlMoveFromRegion(gameData,region)
+        return controlMove?[controlMove]:null
+    }
 
-    // 两个块
-    if(gameData.scoreRegion.length===2)return eatOne;
-    
-    // >此时只有一个块了
-    var region=gameData.connectedRegion[gameData.scoreRegion[0]];
+    return fullRoute
+}
 
-    // 长度不是4的环
-    if(region.isRing && region.block.length!==4)return eatOne;
+TreeSearchAI.prototype.getControlMoveFromRegion = function(gameData, region){
+    if(!region)return null
+    var stack=region.block
+    if(region.isRing){
+        if(region.block.length!==4)return null
+        return {'x':(stack[1].x+stack[2].x)/2,'y':(stack[1].y+stack[2].y)/2}
+    }
+    if(region.block.length!==2)return null
 
-    // 长度不是2的长条
-    if(!region.isRing && region.block.length!==2)return eatOne;
-
-    // >让分数拿先手
-    var stack=region.block;
-    // 长度是4的环
-    if(region.block.length===4) return {'x':(stack[1].x+stack[2].x)/2,'y':(stack[1].y+stack[2].y)/2};
-    // 长度是2的长条
     var p1=1
     if(gameData.xy(stack[0].x,stack[0].y)!==gameData.SCORE_3){
         p1=0
@@ -184,7 +612,523 @@ TreeSearchAI.prototype.tryKeepOffensive=function(gameData,deep){
     for(var ii=0,d;d=directions[ii];ii++){
         var xx=stack[p1].x+d.x, yy=stack[p1].y+d.y
         var xxx=stack[p1].x+2*d.x, yyy=stack[p1].y+2*d.y
-        if(gameData.xy(xx,yy)!==gameData.EDGE_USED && gameData.xy(xxx,yyy)=='out range')return {'x':xx,'y':yy};
+        if(gameData.xy(xx,yy)!==gameData.EDGE_USED && gameData.xy(xxx,yyy)==='out range'){
+            return {'x':xx,'y':yy}
+        }
+    }
+    return null
+}
+
+TreeSearchAI.prototype.getActiveScoreRegions = function(gameData){
+    var regions=[]
+    var seen={}
+    for(var ii=0,index;index=gameData.scoreRegion[ii];ii++){
+        var region=gameData.connectedRegion[index]
+        if(!region || seen[region.index])continue
+        seen[region.index]=true
+        regions.push(region)
+    }
+    return regions
+}
+
+TreeSearchAI.prototype.findRegionByIndex = function(regions, regionIndex){
+    for(var ii=0,region;region=regions[ii];ii++){
+        if(region.index===regionIndex)return region
+    }
+    return null
+}
+
+TreeSearchAI.prototype.chooseScoreRegionToFinish = function(gameData, regions, skipIndex){
+    var list=regions.filter(function(region){
+        return region.index!==skipIndex
+    })
+    if(!list.length)return null
+    list.sort(function(a,b){
+        var ringA=a.isRing?1:0
+        var ringB=b.isRing?1:0
+        if(a.block.length!==b.block.length)return a.block.length-b.block.length
+        if(ringA!==ringB)return ringA-ringB
+        return a.index-b.index
+    })
+    return list[0]
+}
+
+TreeSearchAI.prototype.generateTurnEnderRoutes = function(gameData){
+    if(gameData.edgeCount[gameData.EDGE_NOT]){
+        return this.generateSafeRoutes(gameData,this.TURN_END_ROUTE_LIMIT)
+    }
+    if(gameData.edgeCount[gameData.EDGE_WILL]){
+        return this.generateSacrificeRoutes(gameData,this.TURN_END_ROUTE_LIMIT)
+    }
+    return []
+}
+
+TreeSearchAI.prototype.generateSafeRoutes = function(gameData, limit){
+    var analyses=gameData.getSafeEdgeAnalyses()
+    var routes=[]
+    var used={}
+    var structures=gameData.getControlSwingStructures(analyses)
+    for(var ii=0,structure;structure=structures[ii];ii++){
+        var controlRoute=this.makeRouteFromAnalysis(gameData,structure.analyses[0],'safe-control')
+        if(!controlRoute)continue
+        used[structure.analyses[0].edgeKey]=true
+        routes.push(controlRoute)
+    }
+
+    for(var jj=0,analysis;analysis=analyses[jj];jj++){
+        if(used[analysis.edgeKey] || analysis.isIrrelevant)continue
+        var shapeRoute=this.makeRouteFromAnalysis(gameData,analysis,'safe-shape')
+        if(!shapeRoute)continue
+        used[analysis.edgeKey]=true
+        routes.push(shapeRoute)
+    }
+
+    var irrelevantGroups={}
+    for(var kk=0,item;item=analyses[kk];kk++){
+        if(used[item.edgeKey] || !item.isIrrelevant)continue
+        if(
+            !irrelevantGroups[item.parityKey] ||
+            item.swingScore>irrelevantGroups[item.parityKey].swingScore
+        ){
+            irrelevantGroups[item.parityKey]=item
+        }
+    }
+    for(var name in irrelevantGroups){
+        var irrelevantRoute=this.makeRouteFromAnalysis(
+            gameData,
+            irrelevantGroups[name],
+            'safe-irrelevant'
+        )
+        if(!irrelevantRoute)continue
+        routes.push(irrelevantRoute)
+    }
+
+    return this.collectRepresentativeRoutes(routes,limit||this.SAFE_ROUTE_LIMIT)
+}
+
+TreeSearchAI.prototype.generateSacrificeRoutes = function(gameData, limit){
+    var analyses=gameData.getSacrificeEdgeAnalyses()
+    var routes=[]
+    for(var ii=0,analysis;analysis=analyses[ii];ii++){
+        var route=this.makeRouteFromAnalysis(gameData,analysis,'sacrifice')
+        if(!route)continue
+        routes.push(route)
+    }
+    return this.collectRepresentativeRoutes(routes,limit||this.SACRIFICE_ROUTE_LIMIT)
+}
+
+TreeSearchAI.prototype.generateExactRoutes = function(gameData){
+    if(gameData.edgeCount[gameData.EDGE_NOW]){
+        return this.generateExactScoreRoutes(gameData)
+    }
+    if(gameData.edgeCount[gameData.EDGE_NOT]){
+        return this.generateExactSafeRoutes(gameData)
+    }
+    return this.generateExactSacrificeRoutes(gameData)
+}
+
+TreeSearchAI.prototype.generateExactScoreRoutes = function(gameData){
+    var prefixes=this.generateExactScorePrefixes(gameData)
+    var routes=[]
+    for(var ii=0,prefix;prefix=prefixes[ii];ii++){
+        if(prefix.state.winnerId!=null || prefix.state.playerId!==gameData.playerId){
+            var directRoute=this.makeRouteCandidate(gameData,prefix.state,prefix.moves,prefix.tag)
+            if(directRoute)routes.push(directRoute)
+            continue
+        }
+
+        var enders=this.generateExactTurnEnderRoutes(prefix.state)
+        for(var jj=0,ender;ender=enders[jj];jj++){
+            var route=this.makeRouteCandidate(
+                gameData,
+                ender.state,
+                prefix.moves.concat(ender.moves),
+                prefix.tag+'+'+ender.tag
+            )
+            if(route)routes.push(route)
+        }
+    }
+    return this.collectRepresentativeRoutes(routes)
+}
+
+TreeSearchAI.prototype.generateExactTurnEnderRoutes = function(gameData){
+    if(gameData.edgeCount[gameData.EDGE_NOT]){
+        return this.generateExactSafeRoutes(gameData)
+    }
+    if(gameData.edgeCount[gameData.EDGE_WILL]){
+        return this.generateExactSacrificeRoutes(gameData)
+    }
+    return []
+}
+
+TreeSearchAI.prototype.generateExactSafeRoutes = function(gameData){
+    var analyses=gameData.getSafeEdgeAnalyses()
+    var routes=[]
+    for(var ii=0,analysis;analysis=analyses[ii];ii++){
+        var tag='safe-shape'
+        if(analysis.isControlSwing){
+            tag='safe-control'
+        } else if(analysis.isIrrelevant){
+            tag='safe-irrelevant'
+        }
+        var route=this.makeRouteFromAnalysis(gameData,analysis,tag)
+        if(route)routes.push(route)
+    }
+    return this.collectRepresentativeRoutes(routes)
+}
+
+TreeSearchAI.prototype.generateExactSacrificeRoutes = function(gameData){
+    var analyses=gameData.getSacrificeEdgeAnalyses()
+    var routes=[]
+    for(var ii=0,analysis;analysis=analyses[ii];ii++){
+        var route=this.makeRouteFromAnalysis(gameData,analysis,'sacrifice')
+        if(route)routes.push(route)
+    }
+    return this.collectRepresentativeRoutes(routes)
+}
+
+TreeSearchAI.prototype.collectEdgeRoutes = function(gameData, edges, limit, tag){
+    var routes=[]
+    var beforeTopology=this.getTopologyFingerprint(gameData)
+    for(var ii=0,edge;edge=edges[ii];ii++){
+        var next=gameData.clone()
+        next.putxy(edge.x,edge.y)
+        var route=this.makeRouteCandidate(gameData,next,[edge],tag)
+        if(!route)continue
+        route.isIrrelevant=(tag==='safe' && beforeTopology===this.getTopologyFingerprint(next))
+        route.order=this.getRouteOrderScore(gameData,next,[edge],tag,route.isIrrelevant)
+        routes.push(route)
+    }
+    return this.collectRepresentativeRoutes(routes,limit)
+}
+
+TreeSearchAI.prototype.makeRouteFromAnalysis = function(beforeGameData, analysis, tag){
+    if(!analysis)return null
+    var route=this.makeRouteCandidate(
+        beforeGameData,
+        analysis.state,
+        [analysis.edge],
+        tag,
+        analysis.isIrrelevant
+    )
+    if(!route)return null
+    route.analysis=analysis
+    route.order+=analysis.swingScore||0
+    route.order+=analysis.orderBonus||0
+    return route
+}
+
+TreeSearchAI.prototype.collectRepresentativeRoutes = function(routes, limit){
+    var bucket={}
+    for(var ii=0,route;route=routes[ii];ii++){
+        var key=route.tag+'|'+route.fingerprint
+        if(!bucket[key] || route.order>bucket[key].order){
+            bucket[key]=route
+        }
+    }
+    var list=[]
+    for(var name in bucket){
+        list.push(bucket[name])
+    }
+    list.sort(function(a,b){
+        return b.order-a.order
+    })
+    if(limit && list.length>limit){
+        list=list.slice(0,limit)
+    }
+    return list
+}
+
+TreeSearchAI.prototype.collectUniqueRoutesByState = function(routes){
+    var bucket={}
+    for(var ii=0,route;route=routes[ii];ii++){
+        if(!route || !route.stateKey)continue
+        if(!bucket[route.stateKey] || route.order>bucket[route.stateKey].order){
+            bucket[route.stateKey]=route
+        }
+    }
+    var list=[]
+    for(var name in bucket){
+        list.push(bucket[name])
+    }
+    list.sort(function(a,b){
+        return b.order-a.order
+    })
+    return list
+}
+
+TreeSearchAI.prototype.makeRouteCandidate = function(beforeGameData, afterGameData, moves, tag, isIrrelevant){
+    if(!this.isValidRouteMoves(moves))return null
+    return {
+        moves:moves,
+        tag:tag,
+        state:afterGameData,
+        stateKey:afterGameData.getBoardKey(),
+        fingerprint:this.getRouteFingerprint(afterGameData),
+        order:this.getRouteOrderScore(beforeGameData,afterGameData,moves,tag,isIrrelevant),
     }
 }
 
+TreeSearchAI.prototype.getRouteFingerprint = function(gameData){
+    var stats=gameData.getRegionStats()
+    return [
+        gameData.playerId,
+        gameData.player[0].score,
+        gameData.player[1].score,
+        gameData.edgeCount[gameData.EDGE_NOW],
+        gameData.edgeCount[gameData.EDGE_NOT],
+        gameData.edgeCount[gameData.EDGE_WILL],
+        this.getTopologyFingerprint(gameData,stats),
+    ].join('|')
+}
+
+TreeSearchAI.prototype.getTopologyFingerprint = function(gameData, stats){
+    return gameData.getStructureFingerprint(stats)
+}
+
+TreeSearchAI.prototype.getRouteOrderScore = function(beforeGameData, afterGameData, moves, tag, isIrrelevant){
+    var beforeStats=beforeGameData.getRegionStats()
+    var afterStats=afterGameData.getRegionStats()
+    var myGain=afterGameData.player[this.playerId].score-beforeGameData.player[this.playerId].score
+    var oppGain=afterGameData.player[1-this.playerId].score-beforeGameData.player[1-this.playerId].score
+    var score=this.evaluateStructure(afterGameData)
+
+    score+=(myGain-oppGain)*900
+    score-=moves.length*6
+
+    if(tag.indexOf('score-all')===0){
+        score+=720
+        score+=myGain*220
+        score+=(beforeStats.scoreCellNum-afterStats.scoreCellNum)*60
+    } else if(tag.indexOf('score-control')===0){
+        score+=640
+        score+=myGain*180
+        score+=afterStats.smallClosedNum*40
+        score+=afterStats.largeRingNum*30
+        if(afterGameData.edgeCount[afterGameData.EDGE_NOW])score+=180
+    } else if(tag.indexOf('score-stop')===0){
+        score+=540
+        score+=myGain*160
+        if(afterGameData.edgeCount[afterGameData.EDGE_NOW])score+=140
+    } else if(tag.indexOf('score-one')===0){
+        score+=420
+        score+=myGain*120
+        if(afterGameData.edgeCount[afterGameData.EDGE_NOW])score+=100
+    } else if(tag.indexOf('safe')===0){
+        score+=(beforeStats.largeNonRingNum-afterStats.largeNonRingNum)*220
+        score+=(beforeStats.innerLargeClosedNum-afterStats.innerLargeClosedNum)*140
+        score+=(beforeStats.boundaryLargeClosedNum-afterStats.boundaryLargeClosedNum)*90
+        if(tag==='safe-control'){
+            score+=260
+        } else if(tag==='safe-shape'){
+            score+=160
+        }
+        if(isIrrelevant || tag==='safe-irrelevant'){
+            var parity=(afterGameData.countSafeEdges()+afterStats.smallClosedNum)%2===0?1:-1
+            score+=parity*40
+        } else {
+            score+=160
+        }
+    } else if(tag==='sacrifice'){
+        score-=420
+        score-=afterStats.smallClosedNum*70
+        score-=afterStats.largeNonRingNum*210
+        score-=afterStats.largeRingNum*120
+        score-=oppGain*240
+    }
+
+    return score
+}
+
+TreeSearchAI.prototype.getExactSolvedScore = function(gameData){
+    var diff=
+        gameData.player[this.playerId].score-
+        gameData.player[1-this.playerId].score
+    if(!diff)return 0
+    return (diff>0?1:-1)*(this.MAX_SCORE/4)+diff*1000
+}
+
+TreeSearchAI.prototype.solveLateEndgame = function(gameData){
+    return this.solveLateEndgameWithLimit(
+        gameData,
+        this.EXACT_SAFE_EDGE_LIMIT
+    )
+}
+
+TreeSearchAI.prototype.lookupExactEndgame = function(gameData, maxSafeEdgeCount, alpha, beta){
+    this.exactEndgameCache=this.exactEndgameCache||{}
+    var key='late|'+maxSafeEdgeCount+'|'+gameData.getBoardKey()
+    var entry=this.exactEndgameCache[key]
+    if(!entry){
+        return {
+            key:key,
+            alpha:alpha,
+            beta:beta,
+            entry:null,
+        }
+    }
+    if(typeof entry==='number'){
+        entry={value:entry,flag:'exact'}
+        this.exactEndgameCache[key]=entry
+    }
+    if(entry.flag==='exact'){
+        return {
+            hit:true,
+            value:entry.value,
+            key:key,
+            alpha:alpha,
+            beta:beta,
+            entry:entry,
+        }
+    }
+    if(entry.flag==='lower' && entry.value>alpha)alpha=entry.value
+    if(entry.flag==='upper' && entry.value<beta)beta=entry.value
+    if(alpha>=beta){
+        return {
+            hit:true,
+            value:entry.value,
+            key:key,
+            alpha:alpha,
+            beta:beta,
+            entry:entry,
+        }
+    }
+    return {
+        key:key,
+        alpha:alpha,
+        beta:beta,
+        entry:entry,
+    }
+}
+
+TreeSearchAI.prototype.storeExactEndgame = function(key, value, alphaOrig, betaOrig){
+    var flag='exact'
+    if(value<=alphaOrig){
+        flag='upper'
+    } else if(value>=betaOrig){
+        flag='lower'
+    }
+    this.exactEndgameCache[key]={
+        value:value,
+        flag:flag,
+    }
+}
+
+TreeSearchAI.prototype.solveLateEndgameWithLimit = function(gameData, maxSafeEdgeCount, alpha, beta){
+    alpha=alpha!=null?alpha:-this.MAX_SCORE
+    beta=beta!=null?beta:this.MAX_SCORE
+    if(gameData.edgeCount[gameData.EDGE_NOT]>maxSafeEdgeCount){
+        return null
+    }
+    var alphaOrig=alpha
+    var betaOrig=beta
+    var ttInfo=this.lookupExactEndgame(gameData,maxSafeEdgeCount,alpha,beta)
+    if(ttInfo.hit){
+        return ttInfo.value
+    }
+    alpha=ttInfo.alpha
+    beta=ttInfo.beta
+    var key=ttInfo.key
+    if(gameData.winnerId!=null){
+        var terminalValue=this.getExactSolvedScore(gameData)
+        this.exactEndgameCache[key]={
+            value:terminalValue,
+            flag:'exact',
+        }
+        return terminalValue
+    }
+
+    var routes=this.generateExactRoutes(gameData)
+    if(!routes.length){
+        var resolvedValue=this.getExactSolvedScore(gameData)
+        this.exactEndgameCache[key]={
+            value:resolvedValue,
+            flag:'exact',
+        }
+        return resolvedValue
+    }
+
+    var maximizing=gameData.playerId===this.playerId
+    var best=maximizing?-this.MAX_SCORE:this.MAX_SCORE
+    for(var ii=0,route;route=routes[ii];ii++){
+        var next=route.state||this.applyRouteToClone(gameData,route.moves)
+        if(!next)continue
+        var value=this.solveLateEndgameWithLimit(next,maxSafeEdgeCount,alpha,beta)
+        if(maximizing){
+            if(value>best)best=value
+            if(best>alpha)alpha=best
+        } else {
+            if(value<best)best=value
+            if(best<beta)beta=best
+        }
+        if(alpha>=beta){
+            break
+        }
+    }
+    this.storeExactEndgame(key,best,alphaOrig,betaOrig)
+    return best
+}
+
+TreeSearchAI.prototype.solveExactEndgame = function(gameData){
+    return this.solveLateEndgameWithLimit(gameData,0)
+}
+
+TreeSearchAI.prototype.evaluateStructure = function(gameData){
+    if(gameData.winnerId!=null){
+        return this.getTerminalScore(gameData)
+    }
+
+    var me=gameData.player[this.playerId].score
+    var opp=gameData.player[1-this.playerId].score
+    var currentSign=gameData.playerId===this.playerId?1:-1
+    var stats=gameData.getRegionStats()
+    var features=gameData.getEvalFeatures()
+    var score=(me-opp)*10000
+
+    score+=currentSign*120
+    score+=gameData.edgeCount[gameData.EDGE_NOW]*currentSign*50
+    score+=gameData.edgeCount[gameData.EDGE_NOT]*2
+    score-=gameData.edgeCount[gameData.EDGE_WILL]*6
+
+    score+=stats.scoreCellNum*currentSign*32
+    score-=stats.smallClosedNum*80
+    score+=stats.largeNonRingNum*currentSign*220
+    score+=stats.largeRingNum*currentSign*150
+    score+=stats.boundaryLargeClosedNum*currentSign*70
+    score+=stats.innerLargeClosedNum*currentSign*110
+    score+=stats.maxClosedSize*currentSign*18
+
+    if(features.controlSwingCount && features.safeEdgeCount<=12){
+        score+=features.controlSwingCount*18
+    }
+    if(features.phase==='layout' && features.controlSwingCount===0){
+        score+=currentSign*features.safeSmallParitySignal*16
+    } else if(features.phase==='transition'){
+        if(features.activeLargeScoreRegionNum){
+            score+=currentSign*(70+features.activeLargeScoreCellNum*22)
+        } else if(stats.largeClosedNum>0 && features.safeEdgeCount<=4){
+            score-=currentSign*(80+features.largeChainNum*35+features.largeRingNum*25)
+        }
+    }
+
+    return score
+}
+
+TreeSearchAI.prototype.evaluate = function(gameData){
+    if(gameData.winnerId!=null){
+        return this.getTerminalScore(gameData)
+    }
+    if(!gameData.edgeCount[gameData.EDGE_NOT]){
+        return this.solveExactEndgame(gameData)
+    }
+    return this.evaluateStructure(gameData)
+}
+
+TreeSearchAI.prototype.getFallbackWhere = function(gameData){
+    var groups=[gameData.EDGE_NOW,gameData.EDGE_NOT,gameData.EDGE_WILL]
+    for(var ii=0,number;number=groups[ii];ii++){
+        var edges=gameData.getAllEdges(number)
+        if(edges.length)return edges[0]
+    }
+    return {'x':1,'y':0}
+}

@@ -124,6 +124,7 @@ GameData.prototype.fromGame=function(game){
         }
     }
     _game.initConnectedRegion()
+    _game.clearTransientCache()
     return _game
 }
 GameData.prototype.cloneObj = function (data) {
@@ -150,13 +151,70 @@ GameData.prototype.cloneObj = function (data) {
     }
     return data;
 }
+GameData.prototype.clearTransientCache=function(){
+    this.__regions=null
+    this.__scoreRegions=null
+    this.__closedRegions=null
+    this.__smallRegions=null
+    this.__largeRegions=null
+    this.__ringRegions=null
+    this.__regionStats=null
+    this.__evalFeatures=null
+    this.__structureFingerprint=null
+    this.__controlFingerprint=null
+    this.__safeEdgeAnalyses=null
+    this.__sacrificeEdgeAnalyses=null
+    this.__irrelevantEdges=null
+    this.__controlSwingStructures=null
+    this.__boardKey=null
+}
 GameData.prototype.clone=function(){
     var game=this
     var _game=new GameData()
-    for(var name in game){
-        if(!game.hasOwnProperty(name))continue;
-        _game[name]=game.cloneObj(game[name])
+    _game.endImmediately=game.endImmediately
+    _game.xsize=game.xsize
+    _game.ysize=game.ysize
+    _game.winScore=game.winScore
+    _game.totalScore=game.totalScore
+    _game.playerId=game.playerId
+    _game.winnerId=game.winnerId
+    _game.regionNum=game.regionNum
+    _game.maxIndex=game.maxIndex
+    _game.player=[
+        {score:game.player[0].score,id:game.player[0].id},
+        {score:game.player[1].score,id:game.player[1].id},
+    ]
+    _game.map=game.map.map(function(row){
+        return row.slice()
+    })
+    _game.area=game.area.map(function(row){
+        return row.slice()
+    })
+    _game.edgeCount={}
+    for(var edgeType in game.edgeCount){
+        _game.edgeCount[edgeType]=game.edgeCount[edgeType]
     }
+    _game.scoreCount={}
+    for(var scoreType in game.scoreCount){
+        _game.scoreCount[scoreType]=game.scoreCount[scoreType]
+    }
+    _game.scoreRegion=game.scoreRegion.slice()
+    _game.connectedRegion={}
+    for(var index in game.connectedRegion){
+        var region=game.connectedRegion[index]
+        if(!region){
+            _game.connectedRegion[index]=null
+            continue
+        }
+        _game.connectedRegion[index]={
+            block:region.block.map(function(pt){
+                return {'x':pt.x,'y':pt.y}
+            }),
+            isRing:region.isRing,
+            index:region.index,
+        }
+    }
+    _game.clearTransientCache()
     return _game
 }
 GameData.prototype.initConnectedRegion=function(){
@@ -284,6 +342,7 @@ GameData.prototype.areaxy=function(x,y,value){
 // game.SCORE_4            周围有4个边的分
 GameData.prototype.putxy=function(x,y){
     var game=this
+    game.clearTransientCache()
     var edgebefore=game.xy(x,y)
     game.xy(x,y,game.EDGE_USED)
     game.edgeCount[edgebefore]--
@@ -527,6 +586,7 @@ GameData.prototype.getOneEdgeFromRegion=function(region){
     // this region must be in score region
     // not check here for effectiveness
     var gameData=this
+    if(!region || !region.block || !region.block.length)return null
     var len = region.block.length
     var stack = region.block
     var p1=0
@@ -551,6 +611,7 @@ GameData.prototype.getAllEdgesFromRegion=function(region){
     // this region must be in score region
     // not check here for effectiveness
     var gameData=this
+    if(!region || !region.block || !region.block.length)return []
     var len = region.block.length
     var stack = region.block
     var p1=0
@@ -593,4 +654,567 @@ GameData.prototype.getMinConnectedRegion=function(){
         if(minRegion==null || region.block.length<minRegion.block.length)minRegion=region;
     }
     return minRegion
+}
+GameData.prototype.getAllEdgesByType=function(number){
+    var gameData=this
+    var edges=[]
+    for(var y=0;y<2*gameData.ysize+1;y++){
+        for(var x=0;x<2*gameData.xsize+1;x++){
+            if(gameData.xy(x,y)===number){
+                edges.push({'x':x,'y':y})
+            }
+        }
+    }
+    return edges
+}
+GameData.prototype.getAllLegalEdges=function(){
+    var gameData=this
+    return gameData
+        .getAllEdgesByType(gameData.EDGE_NOW)
+        .concat(gameData.getAllEdgesByType(gameData.EDGE_NOT))
+        .concat(gameData.getAllEdgesByType(gameData.EDGE_WILL))
+}
+GameData.prototype.getAllEdges=function(number){
+    if(number==null)return this.getAllLegalEdges()
+    return this.getAllEdgesByType(number)
+}
+GameData.prototype.getAdjacentCellsFromEdge=function(edge){
+    var cells=[]
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx=edge.x+d.x, yy=edge.y+d.y
+        var value=this.xy(xx,yy)
+        if(
+            value===this.SCORE_0 ||
+            value===this.SCORE_1 ||
+            value===this.SCORE_2 ||
+            value===this.SCORE_3 ||
+            value===this.SCORE_4
+        ){
+            cells.push({'x':xx,'y':yy})
+        }
+    }
+    return cells
+}
+GameData.prototype.getEdgeRegionIndices=function(edge){
+    var cells=this.getAdjacentCellsFromEdge(edge)
+    var indices=[]
+    var seen={}
+    for(var ii=0,cell;cell=cells[ii];ii++){
+        var index=this.areaxy(cell.x,cell.y)
+        if(index==='out range' || !index || seen[index] || !this.connectedRegion[index])continue
+        seen[index]=true
+        indices.push(index)
+    }
+    return indices
+}
+GameData.prototype.getEdgeGeometryKey=function(edge){
+    var gameData=this
+    var cells=gameData.getAdjacentCellsFromEdge(edge)
+    var minDist=999
+    var boundaryCount=0
+    var scoreTypes=[]
+    for(var ii=0,cell;cell=cells[ii];ii++){
+        var cx=(cell.x-1)>>1
+        var cy=(cell.y-1)>>1
+        var dist=Math.min(cx,cy,gameData.xsize-1-cx,gameData.ysize-1-cy)
+        if(dist<minDist)minDist=dist
+        if(gameData.regionContainsBoundary({'block':[cell]})){
+            boundaryCount++
+        }
+        scoreTypes.push(gameData.xy(cell.x,cell.y))
+    }
+    if(minDist===999)minDist=-1
+    if(minDist>2)minDist=2
+    scoreTypes.sort()
+    return [
+        edge.x%2===0?'v':'h',
+        cells.length,
+        boundaryCount,
+        minDist,
+        scoreTypes.join(','),
+    ].join('|')
+}
+GameData.prototype.getRegions=function(){
+    if(this.__regions)return this.__regions
+    var gameData=this
+    var regions=[]
+    for(var ii in gameData.connectedRegion){
+        var region = gameData.connectedRegion[ii]
+        if(region)regions.push(region)
+    }
+    this.__regions=regions
+    return regions
+}
+GameData.prototype.getScoreRegions=function(){
+    if(this.__scoreRegions)return this.__scoreRegions
+    var gameData=this
+    var regions=[]
+    var seen={}
+    for(var ii=0,index;index=gameData.scoreRegion[ii];ii++){
+        var region=gameData.connectedRegion[index]
+        if(!region || seen[region.index])continue
+        seen[region.index]=true
+        regions.push(region)
+    }
+    this.__scoreRegions=regions
+    return regions
+}
+GameData.prototype.isClosedRegion=function(region){
+    if(!region)return false
+    for(var ii=0,pt;pt=region.block[ii];ii++){
+        if(this.xy(pt.x,pt.y)===this.SCORE_3)return false
+    }
+    return true
+}
+GameData.prototype.getClosedRegions=function(){
+    if(this.__closedRegions)return this.__closedRegions
+    var gameData=this
+    this.__closedRegions=gameData.getRegions().filter(function(region){
+        return gameData.isClosedRegion(region)
+    })
+    return this.__closedRegions
+}
+GameData.prototype.getSmallRegions=function(){
+    if(this.__smallRegions)return this.__smallRegions
+    this.__smallRegions=this.getClosedRegions().filter(function(region){
+        return region.block.length<=2
+    })
+    return this.__smallRegions
+}
+GameData.prototype.getLargeRegions=function(){
+    if(this.__largeRegions)return this.__largeRegions
+    this.__largeRegions=this.getClosedRegions().filter(function(region){
+        return region.block.length>=3
+    })
+    return this.__largeRegions
+}
+GameData.prototype.getRingRegions=function(){
+    if(this.__ringRegions)return this.__ringRegions
+    this.__ringRegions=this.getRegions().filter(function(region){
+        return region.isRing
+    })
+    return this.__ringRegions
+}
+GameData.prototype.regionContainsBoundary=function(region){
+    var gameData=this
+    for(var ii=0,pt;pt=region.block[ii];ii++){
+        if(
+            gameData.xy(pt.x-2,pt.y)==='out range' ||
+            gameData.xy(pt.x+2,pt.y)==='out range' ||
+            gameData.xy(pt.x,pt.y-2)==='out range' ||
+            gameData.xy(pt.x,pt.y+2)==='out range'
+        ){
+            return true
+        }
+    }
+    return false
+}
+GameData.prototype.countSafeEdges=function(){
+    return this.edgeCount[this.EDGE_NOT]||0
+}
+GameData.prototype.isEndgamePhase=function(){
+    return this.countSafeEdges()===0
+}
+GameData.prototype.getRegionStats=function(){
+    if(this.__regionStats)return this.__regionStats
+    var gameData=this
+    var regions=gameData.getRegions()
+    var closedRegions=gameData.getClosedRegions()
+    var scoreSet={}
+    for(var ii=0,index;index=gameData.scoreRegion[ii];ii++){
+        scoreSet[index]=true
+    }
+    var stats={
+        regionNum:regions.length,
+        closedNum:closedRegions.length,
+        scoreRegionNum:0,
+        scoreCellNum:0,
+        smallClosedNum:0,
+        largeClosedNum:0,
+        ringNum:0,
+        largeRingNum:0,
+        largeNonRingNum:0,
+        boundaryLargeClosedNum:0,
+        innerLargeClosedNum:0,
+        maxClosedSize:0,
+        maxRegionSize:0,
+    }
+    for(var rr=0,region;region=regions[rr];rr++){
+        var size=region.block.length
+        if(size>stats.maxRegionSize)stats.maxRegionSize=size
+        if(scoreSet[region.index]){
+            stats.scoreRegionNum++
+            stats.scoreCellNum+=size
+        }
+        if(region.isRing){
+            stats.ringNum++
+        }
+    }
+    for(var jj=0,closed;closed=closedRegions[jj];jj++){
+        var closedSize=closed.block.length
+        if(closedSize>stats.maxClosedSize)stats.maxClosedSize=closedSize
+        if(closedSize<=2){
+            stats.smallClosedNum++
+            continue
+        }
+        stats.largeClosedNum++
+        if(closed.isRing){
+            stats.largeRingNum++
+        } else {
+            stats.largeNonRingNum++
+        }
+        if(gameData.regionContainsBoundary(closed)){
+            stats.boundaryLargeClosedNum++
+        } else {
+            stats.innerLargeClosedNum++
+        }
+    }
+    this.__regionStats=stats
+    return stats
+}
+GameData.prototype.getEvalFeatures=function(){
+    if(this.__evalFeatures)return this.__evalFeatures
+    var gameData=this
+    var stats=gameData.getRegionStats()
+    var safeEdgeCount=gameData.countSafeEdges()
+    var scoreRegions=gameData.getScoreRegions()
+    var closedRegions=gameData.getClosedRegions()
+    var features={
+        phase:'layout',
+        safeEdgeCount:safeEdgeCount,
+        scoreEdgeCount:gameData.edgeCount[gameData.EDGE_NOW]||0,
+        sacrificeEdgeCount:gameData.edgeCount[gameData.EDGE_WILL]||0,
+        irrelevantEdgeCount:0,
+        controlSwingCount:0,
+        controlZeroParitySignal:0,
+        smallParitySignal:(stats.smallClosedNum%2===0)?1:-1,
+        safeSmallParitySignal:((safeEdgeCount+stats.smallClosedNum)%2===0)?1:-1,
+        largeNonRingParitySignal:(stats.largeNonRingNum%2===0)?1:-1,
+        totalSmallCells:0,
+        totalLargeCells:0,
+        largeChainNum:stats.largeNonRingNum,
+        largeRingNum:stats.largeRingNum,
+        largeChainCellNum:0,
+        largeRingCellNum:0,
+        boundaryChainNum:0,
+        innerChainNum:0,
+        chain3Num:0,
+        chain4PlusNum:0,
+        ring4Num:0,
+        ring6PlusNum:0,
+        activeScoreRegionNum:scoreRegions.length,
+        activeScoreCellNum:0,
+        activeSmallScoreRegionNum:0,
+        activeLargeScoreRegionNum:0,
+        activeLargeScoreCellNum:0,
+        activeRingScoreRegionNum:0,
+        activeBoundaryScoreRegionNum:0,
+        activeMaxScoreRegionSize:0,
+    }
+
+    for(var ii=0,region;region=closedRegions[ii];ii++){
+        var size=region.block.length
+        if(size<=2){
+            features.totalSmallCells+=size
+            continue
+        }
+        features.totalLargeCells+=size
+        if(region.isRing){
+            features.largeRingCellNum+=size
+            if(size===4){
+                features.ring4Num++
+            } else {
+                features.ring6PlusNum++
+            }
+            continue
+        }
+        features.largeChainCellNum+=size
+        if(size===3){
+            features.chain3Num++
+        } else {
+            features.chain4PlusNum++
+        }
+        if(gameData.regionContainsBoundary(region)){
+            features.boundaryChainNum++
+        } else {
+            features.innerChainNum++
+        }
+    }
+
+    for(var jj=0,scoreRegion;scoreRegion=scoreRegions[jj];jj++){
+        var scoreSize=scoreRegion.block.length
+        features.activeScoreCellNum+=scoreSize
+        if(scoreSize>features.activeMaxScoreRegionSize){
+            features.activeMaxScoreRegionSize=scoreSize
+        }
+        if(scoreRegion.isRing){
+            features.activeRingScoreRegionNum++
+        }
+        if(gameData.regionContainsBoundary(scoreRegion)){
+            features.activeBoundaryScoreRegionNum++
+        }
+        if(scoreSize<=2){
+            features.activeSmallScoreRegionNum++
+        } else {
+            features.activeLargeScoreRegionNum++
+            features.activeLargeScoreCellNum+=scoreSize
+        }
+    }
+
+    if(
+        safeEdgeCount &&
+        (
+            gameData.__safeEdgeAnalyses ||
+            safeEdgeCount<=12 ||
+            stats.closedNum>=2
+        )
+    ){
+        var analyses=gameData.getSafeEdgeAnalyses()
+        features.irrelevantEdgeCount=gameData.getIrrelevantEdges(analyses).length
+        features.controlSwingCount=gameData.getControlSwingStructures(analyses).length
+    }
+    features.controlZeroParitySignal=
+        features.controlSwingCount===0?features.safeSmallParitySignal:0
+
+    if(safeEdgeCount===0){
+        features.phase='endgame'
+    } else if(
+        features.scoreEdgeCount>0 ||
+        stats.largeClosedNum>0 ||
+        features.activeLargeScoreRegionNum>0 ||
+        safeEdgeCount<=8
+    ){
+        features.phase='transition'
+    }
+
+    this.__evalFeatures=features
+    return features
+}
+GameData.prototype.getStructureFingerprint=function(stats){
+    if(!stats && this.__structureFingerprint)return this.__structureFingerprint
+    stats=stats||this.getRegionStats()
+    var key=[
+        stats.regionNum,
+        stats.closedNum,
+        stats.scoreRegionNum,
+        stats.scoreCellNum,
+        stats.smallClosedNum,
+        stats.largeClosedNum,
+        stats.largeRingNum,
+        stats.largeNonRingNum,
+        stats.boundaryLargeClosedNum,
+        stats.innerLargeClosedNum,
+        stats.maxClosedSize,
+        stats.maxRegionSize,
+    ].join('|')
+    if(!stats || stats===this.__regionStats)this.__structureFingerprint=key
+    return key
+}
+GameData.prototype.getControlFingerprint=function(stats){
+    if(!stats && this.__controlFingerprint)return this.__controlFingerprint
+    stats=stats||this.getRegionStats()
+    var key=[
+        stats.smallClosedNum,
+        stats.largeClosedNum,
+        stats.largeRingNum,
+        stats.largeNonRingNum,
+        stats.boundaryLargeClosedNum,
+        stats.innerLargeClosedNum,
+        stats.maxClosedSize,
+        stats.maxRegionSize,
+        this.isEndgamePhase()?1:0,
+    ].join('|')
+    if(!stats || stats===this.__regionStats)this.__controlFingerprint=key
+    return key
+}
+GameData.prototype.getSafeEdgeAnalyses=function(){
+    if(this.__safeEdgeAnalyses)return this.__safeEdgeAnalyses
+    var gameData=this
+    var beforeStats=gameData.getRegionStats()
+    var beforeStructureKey=gameData.getStructureFingerprint(beforeStats)
+    var beforeControlKey=gameData.getControlFingerprint(beforeStats)
+    var beforeEndgame=gameData.isEndgamePhase()
+    var analyses=[]
+    var edges=gameData.getAllEdges(gameData.EDGE_NOT)
+    for(var ii=0,edge;edge=edges[ii];ii++){
+        var next=gameData.clone()
+        next.putxy(edge.x,edge.y)
+        var afterStats=next.getRegionStats()
+        var structureKey=next.getStructureFingerprint(afterStats)
+        var controlKey=next.getControlFingerprint(afterStats)
+        var endgameNow=next.isEndgamePhase()
+        var geometryKey=gameData.getEdgeGeometryKey(edge)
+        var geometryParts=geometryKey.split('|')
+        var minDist=~~geometryParts[3]
+        var boundaryCount=~~geometryParts[2]
+        var adjacentCellNum=~~geometryParts[1]
+        var geometryScore=0
+        geometryScore+=adjacentCellNum*20
+        geometryScore+=minDist*12
+        geometryScore-=boundaryCount*10
+        var swingScore=0
+        swingScore+=Math.abs(afterStats.largeNonRingNum-beforeStats.largeNonRingNum)*40
+        swingScore+=Math.abs(afterStats.largeRingNum-beforeStats.largeRingNum)*28
+        swingScore+=Math.abs(afterStats.innerLargeClosedNum-beforeStats.innerLargeClosedNum)*18
+        swingScore+=Math.abs(afterStats.boundaryLargeClosedNum-beforeStats.boundaryLargeClosedNum)*12
+        swingScore+=Math.abs(afterStats.smallClosedNum-beforeStats.smallClosedNum)*8
+        swingScore+=Math.abs(afterStats.closedNum-beforeStats.closedNum)*6
+        swingScore+=Math.abs(afterStats.maxClosedSize-beforeStats.maxClosedSize)*2
+        if(structureKey!==beforeStructureKey)swingScore+=10
+        if(controlKey!==beforeControlKey)swingScore+=14
+        if(endgameNow!==beforeEndgame)swingScore+=20
+        analyses.push({
+            edge:{'x':edge.x,'y':edge.y},
+            edgeKey:[edge.x,edge.y].join(','),
+            geometryKey:geometryKey,
+            state:next,
+            afterStats:afterStats,
+            structureKey:structureKey,
+            controlKey:controlKey,
+            geometryScore:geometryScore,
+            isIrrelevant:structureKey===beforeStructureKey,
+            isControlSwing:controlKey!==beforeControlKey || endgameNow!==beforeEndgame,
+            parityKey:[
+                (next.countSafeEdges()+afterStats.smallClosedNum)%2===0?1:0,
+                geometryKey,
+                afterStats.largeNonRingNum,
+                afterStats.largeRingNum,
+            ].join('|'),
+            swingScore:swingScore,
+        })
+    }
+    analyses.sort(function(a,b){
+        if(a.isControlSwing!==b.isControlSwing)return a.isControlSwing?-1:1
+        if(a.isIrrelevant!==b.isIrrelevant)return a.isIrrelevant?1:-1
+        return b.swingScore-a.swingScore
+    })
+    this.__safeEdgeAnalyses=analyses
+    return analyses
+}
+GameData.prototype.getSacrificeEdgeAnalyses=function(){
+    if(this.__sacrificeEdgeAnalyses)return this.__sacrificeEdgeAnalyses
+    var gameData=this
+    var analyses=[]
+    var edges=gameData.getAllEdges(gameData.EDGE_WILL)
+    for(var ii=0,edge;edge=edges[ii];ii++){
+        var next=gameData.clone()
+        next.putxy(edge.x,edge.y)
+        var regionIndices=gameData.getEdgeRegionIndices(edge)
+        var primaryRegion=null
+        for(var jj=0,index;index=regionIndices[jj];jj++){
+            var region=gameData.connectedRegion[index]
+            if(!region)continue
+            if(
+                !primaryRegion ||
+                region.block.length<primaryRegion.block.length ||
+                (region.block.length===primaryRegion.block.length && region.isRing && !primaryRegion.isRing) ||
+                (region.block.length===primaryRegion.block.length && region.isRing===primaryRegion.isRing && region.index<primaryRegion.index)
+            ){
+                primaryRegion=region
+            }
+        }
+        var regionSize=primaryRegion?primaryRegion.block.length:999
+        var hasBoundary=primaryRegion?gameData.regionContainsBoundary(primaryRegion):false
+        var isRing=primaryRegion?primaryRegion.isRing:false
+        var afterStats=next.getRegionStats()
+        var openScore=0
+        openScore-=regionSize*120
+        if(regionSize<=2)openScore+=520
+        if(!isRing && regionSize===2)openScore+=180
+        if(isRing && regionSize===4)openScore+=220
+        if(isRing)openScore+=40
+        if(hasBoundary)openScore+=20
+        openScore-=afterStats.largeNonRingNum*40
+        openScore-=afterStats.largeRingNum*20
+        analyses.push({
+            edge:{'x':edge.x,'y':edge.y},
+            edgeKey:[edge.x,edge.y].join(','),
+            state:next,
+            afterStats:afterStats,
+            regionIndex:primaryRegion?primaryRegion.index:null,
+            regionSize:regionSize,
+            isRing:isRing,
+            hasBoundary:hasBoundary,
+            geometryKey:gameData.getEdgeGeometryKey(edge),
+            categoryKey:[
+                regionSize<=2?'small':'large',
+                isRing?'ring':'chain',
+                hasBoundary?'boundary':'inner',
+                regionSize,
+            ].join('|'),
+            orderBonus:openScore,
+        })
+    }
+    analyses.sort(function(a,b){
+        if(a.regionSize!==b.regionSize)return a.regionSize-b.regionSize
+        if(a.isRing!==b.isRing)return a.isRing?-1:1
+        if(a.hasBoundary!==b.hasBoundary)return a.hasBoundary?-1:1
+        return b.orderBonus-a.orderBonus
+    })
+    this.__sacrificeEdgeAnalyses=analyses
+    return analyses
+}
+GameData.prototype.getIrrelevantEdges=function(analyses){
+    if(!analyses && this.__irrelevantEdges)return this.__irrelevantEdges
+    analyses=analyses||this.getSafeEdgeAnalyses()
+    var edges=[]
+    for(var ii=0,item;item=analyses[ii];ii++){
+        if(item.isIrrelevant){
+            edges.push({'x':item.edge.x,'y':item.edge.y})
+        }
+    }
+    if(!analyses || analyses===this.__safeEdgeAnalyses)this.__irrelevantEdges=edges
+    return edges
+}
+GameData.prototype.getControlSwingStructures=function(analyses){
+    if(!analyses && this.__controlSwingStructures)return this.__controlSwingStructures
+    analyses=analyses||this.getSafeEdgeAnalyses()
+    var groups={}
+    for(var ii=0,item;item=analyses[ii];ii++){
+        if(!item.isControlSwing)continue;
+        var key=item.controlKey
+        if(!groups[key]){
+            groups[key]={
+                key:key,
+                analyses:[],
+                edges:[],
+                swingScore:item.swingScore,
+            }
+        }
+        groups[key].analyses.push(item)
+        groups[key].edges.push({'x':item.edge.x,'y':item.edge.y})
+        if(item.swingScore>groups[key].swingScore){
+            groups[key].swingScore=item.swingScore
+        }
+    }
+    var list=[]
+    for(var name in groups){
+        var group=groups[name]
+        group.analyses.sort(function(a,b){
+            return b.swingScore-a.swingScore
+        })
+        group.edge={'x':group.analyses[0].edge.x,'y':group.analyses[0].edge.y}
+        list.push(group)
+    }
+    list.sort(function(a,b){
+        return b.swingScore-a.swingScore
+    })
+    if(!analyses || analyses===this.__safeEdgeAnalyses)this.__controlSwingStructures=list
+    return list
+}
+GameData.prototype.getBoardKey=function(){
+    if(this.__boardKey)return this.__boardKey
+    var gameData=this
+    var rows=[]
+    for(var y=0;y<gameData.map.length;y++){
+        rows.push(gameData.map[y].join(','))
+    }
+    this.__boardKey=[
+        gameData.playerId,
+        gameData.player[0].score,
+        gameData.player[1].score,
+        rows.join(';')
+    ].join('|')
+    return this.__boardKey
 }
