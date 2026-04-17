@@ -236,6 +236,7 @@ TreeSearchAI.prototype.pickYieldEdge = function(gameData, region) {
                 && gameData.xy(xxx, yyy) === 'out range')
                 return { x: xx, y: yy }
         }
+        // L2不在棋盘边缘，无法让分，直接吃
     }
     return null
 }

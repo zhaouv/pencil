@@ -420,6 +420,6 @@ OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
         if(gameData.xy(xx,yy)!==gameData.EDGE_USED && gameData.xy(xxx,yyy)=='out range')return {'x':xx,'y':yy};
     }
 
-    console.log('bug:理论上不应该走到这里')
+    // L2不在棋盘边缘，无法让分，直接吃
     return eatOne;
 }
