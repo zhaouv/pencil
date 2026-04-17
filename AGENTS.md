@@ -33,7 +33,7 @@
   - `socket.io` 对战服务器，默认监听 `5050`。
   - 管理随机匹配、指定房间、观战和棋谱广播。
 - `aivsai.js`
-  - 新增但尚未提交的 Node CLI，用于 AI vs AI 批量对战和录像导出。
+  - Node CLI，用于 AI vs AI 批量对战、带 seed 的可复现对局和录像导出。
 - `ts_cases.js`
   - Node 下的固定局面回归脚本，用于检查 `TreeSearchAI` 的结构评估特征、无安全步收官判断、关键让分选择和 exact score prefix 假设。
 
@@ -44,14 +44,22 @@
 当前最容易验证的入口是：
 
 ```bash
-node aivsai.js -n 5
+node aivsai.js -1 ok -2 gr -n 1 -s --seed 123
 ```
 
 已实际跑通，输出结果为：
 
 ```text
-OffensiveKeeperAI(先手) vs GreedyRandomAI(后手) 6x6 5局
-结果: OK 4胜 GR 1负
+OffensiveKeeperAI(先手) vs GreedyRandomAI(后手) 6x6 1局
+随机种子: 123
+结果: OK 1胜 GR 0负
+平均步数: 77
+
+GreedyRandomAI(先手) vs OffensiveKeeperAI(后手) 6x6 1局
+结果: OK 1胜 GR 0负
+平均步数: 79
+
+综合 2局: OK 2胜 GR 0负 (100%)
 ```
 
 ### 2. 网络对战服务
@@ -74,6 +82,12 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
 ```
 
 - 已验证 `aivsai.js` 在默认 AI 组合下可运行。
+- 已验证 `aivsai.js` 已支持 `--seed <n>`：
+  - 可固定 `Math.random`
+  - 录像导出的 JSON / HTML 配置和单局结果里会保留 seed
+- 已验证可复现样本：
+  - `node aivsai.js -1 ok -2 gr -n 1 -s --seed 123`
+  - 当前固定输出为 `OK 2胜 GR 0负 (100%)`
 - 已验证 `TreeSearchAI` 现在可以完整跑完对局，不再是一上来就报错的原型状态。
 - 已验证 `TreeSearchAI` 的回合级路线 + 搜索核心版本至少能稳定跑完最小回归：
   - `node aivsai.js -1 ts -2 gr -n 1`
@@ -85,13 +99,14 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - 普通 score prefixes 为 `score-all / score-stop / score-control`
   - exact score prefixes 为 `score-all / score-control`
 - 已验证单局 spot check：
-  - 近期 `time node aivsai.js -1 ts -2 ok -n 1` 约在 `29s` 到 `38s`，样本结果有过 `0:1`
-  - 近期 `time node aivsai.js -1 ts -2 gr -n 1` 约在 `27s` 到 `33s`，样本结果有过 `1:0`
+  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `0:1`，平均步数 `66`，约 `37s`
+  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`，平均步数 `67`，约 `49s`
+  - `time node aivsai.js -1 ts -2 gr -n 1 --seed 123` 为 `1:0`，平均步数 `67`，约 `49s`
 - 已验证短样本基准：
   - 上一轮 2+2 自定义短样本基线为：
     - `ts vs ok` 为 `1:3`
     - `ts vs gr` 为 `2:2`
-  - 本轮又补了无安全步精确收官分支修正、`ring4_sacrifice_choice` / `exact_score_prefix_control_only` 回归、exact score prefix 去重和 exact TT，但尚未重跑同口径 2+2 样本
+  - 本轮又补了 `--seed`、无安全步精确收官直切 exact、exact sacrifice route 结构分桶代表化，但尚未重跑同口径 2+2 样本
   - 当前观测到的单点最大 exact 分支有过 `43 -> 26` 的收缩，但最新整局 spot check 仍会遇到 `40` 路左右的 exact 状态
   - 说明当前版本已经从“性能完全不够”推进到了“Phase 4 初版已接入且收官关键点开始固定、精确分支开始收缩但仍会反弹”的阶段
 - 未验证浏览器页面、网络对战、观战流程。
@@ -122,7 +137,7 @@ node aivsai.js -1 ts -2 ok -n 5 -s
 - 现在最小样本 benchmark 可以较稳定完成
 - 但候选较多的收官局面仍会明显变慢
 - 本轮已补 exact TT，并把部分状态的最大 exact 分支从 `43` 压到 `26`
-- 但单局 `aivsai.js -n 1` spot check 仍在约 `30s` 到 `40s`，且整局里还会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩
+- 本轮又补了 exact sacrifice route 结构分桶和无安全步直切 exact，但单局 `aivsai.js -n 1` 带 seed spot check 仍在约 `37s` 到 `49s`，且整局里还会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩
 - 更大样本 benchmark 依然不适合直接放大
 - 后续如果要继续提胜率，必须同时优化：
   - 候选压缩
@@ -148,7 +163,8 @@ node aivsai.js -1 ts -2 ok -n 5 -s
 ## 推荐的最小回归检查
 
 - `node aivsai.js -n 5`
-- `node aivsai.js -1 ok -2 gr -n 5 -s`
+- `node aivsai.js -1 ok -2 gr -n 1 -s --seed 123`
+- `node aivsai.js -1 ts -2 ok -n 1 --seed 1`
 - `node ts_cases.js`
 - `node -e "require('./game.js'); require('./gamedata.js'); require('./player.js'); require('./treeSearch.js'); console.log('core ok')"`
 

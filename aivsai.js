@@ -5,6 +5,7 @@
 //   -x, --xsize <n>     棋盘宽 (default: 6)
 //   -y, --ysize <n>     棋盘高 (default: 6)
 //   -n, --rounds <n>    局数 (default: 100)
+//   --seed <n>          固定随机种子
 //   -o, --output <file> 录像输出 (.json 或 .html)
 //   -s, --swap          交换先后手再跑一轮
 //   -h, --help          显示帮助
@@ -15,12 +16,36 @@ var path = require('path')
 
 // ============ 加载源文件 ============
 
+function createSeededRandom(seed) {
+    var state = seed >>> 0
+    return function() {
+        state = (state * 1664525 + 1013904223) >>> 0
+        return state / 4294967296
+    }
+}
+
+function normalizeSeed(seed) {
+    if (seed == null) return null
+    if (/^-?\d+$/.test(seed)) {
+        return (parseInt(seed, 10) >>> 0)
+    }
+    var hash = 2166136261
+    for (var ii = 0; ii < seed.length; ii++) {
+        hash ^= seed.charCodeAt(ii)
+        hash = Math.imul(hash, 16777619)
+    }
+    return hash >>> 0
+}
+
+var nativeMath = Object.create(Math)
+
 var sandbox = {
     console: console,
     setTimeout: setTimeout,
     setInterval: setInterval,
     clearTimeout: clearTimeout,
     clearInterval: clearInterval,
+    Math: nativeMath,
 }
 vm.createContext(sandbox)
 
@@ -57,13 +82,14 @@ function printHelp() {
         '  -x, --xsize <n>     棋盘宽 (default: 6)',
         '  -y, --ysize <n>     棋盘高 (default: 6)',
         '  -n, --rounds <n>    局数 (default: 100)',
+        '  --seed <n>          固定随机种子',
         '  -o, --output <file> 录像输出 (.json 或 .html)',
         '  -s, --swap          交换先后手再跑一轮',
         '  -h, --help          显示帮助',
     ].join('\n'))
 }
 
-var config = { ai1: 'ok', ai2: 'gr', xsize: 6, ysize: 6, rounds: 100, output: null, swap: false }
+var config = { ai1: 'ok', ai2: 'gr', xsize: 6, ysize: 6, rounds: 100, output: null, swap: false, seed: null }
 var args = process.argv.slice(2)
 
 for (var i = 0; i < args.length; i++) {
@@ -73,6 +99,7 @@ for (var i = 0; i < args.length; i++) {
         case '-x': case '--xsize': config.xsize = parseInt(args[++i]); break
         case '-y': case '--ysize': config.ysize = parseInt(args[++i]); break
         case '-n': case '--rounds': config.rounds = parseInt(args[++i]); break
+        case '--seed': config.seed = args[++i]; break
         case '-o': case '--output': config.output = args[++i]; break
         case '-s': case '--swap': config.swap = true; break
         case '-h': case '--help': printHelp(); process.exit(0)
@@ -85,12 +112,24 @@ if (!AI_MAP[config.ai2]) { console.error('未知AI: ' + config.ai2); process.exi
 
 // ============ 对战 ============
 
-function aivsai(AI1Cls, AI2Cls, xsize, ysize, rounds) {
+function setSandboxRandom(seed) {
+    if (seed == null) {
+        sandbox.Math.random = Math.random
+        return null
+    }
+    var normalized = normalizeSeed(String(seed))
+    sandbox.Math.random = createSeededRandom(normalized)
+    return normalized
+}
+
+function aivsai(AI1Cls, AI2Cls, xsize, ysize, rounds, seedBase) {
     var wins = [0, 0]
     var games = []
     var unfinished = 0
     var totalMoves = 0
     for (var r = 0; r < rounds; r++) {
+        var gameSeed = seedBase == null ? null : ((seedBase + r) >>> 0)
+        setSandboxRandom(gameSeed)
         var game = new Game().init(xsize, ysize)
         var gd = new GameData().fromGame(game)
         var history = []
@@ -123,7 +162,7 @@ function aivsai(AI1Cls, AI2Cls, xsize, ysize, rounds) {
         if (gd.winnerId != null) {
             wins[gd.winnerId]++
             totalMoves += history.length
-            games.push({ winner: gd.winnerId, history: history })
+            games.push({ winner: gd.winnerId, history: history, seed: gameSeed })
         } else {
             unfinished++
         }
@@ -140,12 +179,14 @@ function aivsai(AI1Cls, AI2Cls, xsize, ysize, rounds) {
 
 var ai1Info = AI_MAP[config.ai1]
 var ai2Info = AI_MAP[config.ai2]
+var seedBase = normalizeSeed(config.seed == null ? null : String(config.seed))
 
 var results = []
 
 // 正序
 console.log(ai1Info.name + '(先手) vs ' + ai2Info.name + '(后手) ' + config.xsize + 'x' + config.ysize + ' ' + config.rounds + '局')
-var r1 = aivsai(ai1Info.cls, ai2Info.cls, config.xsize, config.ysize, config.rounds)
+if (seedBase != null) console.log('随机种子: ' + seedBase)
+var r1 = aivsai(ai1Info.cls, ai2Info.cls, config.xsize, config.ysize, config.rounds, seedBase)
 console.log('结果: ' + ai1Info.short + ' ' + r1.wins[0] + '胜 ' + ai2Info.short + ' ' + r1.wins[1] + '负')
 if (r1.unfinished) console.log('未完成: ' + r1.unfinished + '局')
 console.log('平均步数: ' + r1.averageMoves)
@@ -154,7 +195,8 @@ results.push({ ai1: config.ai1, ai2: config.ai2, wins: r1.wins, games: r1.games 
 if (config.swap) {
     console.log('')
     console.log(ai2Info.name + '(先手) vs ' + ai1Info.name + '(后手) ' + config.xsize + 'x' + config.ysize + ' ' + config.rounds + '局')
-    var r2 = aivsai(ai2Info.cls, ai1Info.cls, config.xsize, config.ysize, config.rounds)
+    var swapSeedBase = seedBase == null ? null : ((seedBase + config.rounds) >>> 0)
+    var r2 = aivsai(ai2Info.cls, ai1Info.cls, config.xsize, config.ysize, config.rounds, swapSeedBase)
     console.log('结果: ' + ai1Info.short + ' ' + r2.wins[1] + '胜 ' + ai2Info.short + ' ' + r2.wins[0] + '负')
     if (r2.unfinished) console.log('未完成: ' + r2.unfinished + '局')
     console.log('平均步数: ' + r2.averageMoves)
@@ -182,7 +224,7 @@ if (config.output) {
 
 function writeJSON(filepath) {
     var data = {
-        config: { ai1: config.ai1, ai2: config.ai2, xsize: config.xsize, ysize: config.ysize, rounds: config.rounds, swap: config.swap },
+        config: { ai1: config.ai1, ai2: config.ai2, xsize: config.xsize, ysize: config.ysize, rounds: config.rounds, swap: config.swap, seed: seedBase },
         results: results.map(function(r) {
             return {
                 ai1: r.ai1, ai2: r.ai2,
@@ -201,7 +243,7 @@ function writeJSON(filepath) {
 
 function writeHTML(filepath) {
     var replayData = JSON.stringify({
-        config: { ai1: config.ai1, ai2: config.ai2, xsize: config.xsize, ysize: config.ysize },
+        config: { ai1: config.ai1, ai2: config.ai2, xsize: config.xsize, ysize: config.ysize, seed: seedBase },
         results: results.map(function(r) {
             return { ai1: r.ai1, ai2: r.ai2, wins: r.wins, games: r.games }
         }),

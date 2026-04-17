@@ -168,9 +168,10 @@ TreeSearchAI.prototype.storeTransposition = function(prefix, gameData, depth, va
     }
 }
 
-TreeSearchAI.prototype.orderRoutes = function(routes, ttEntry){
+TreeSearchAI.prototype.orderRoutes = function(routes, ttEntry, maximizing){
     var historyTable=this.historyTable||{}
     var bestStateKey=ttEntry && ttEntry.bestStateKey
+    maximizing=maximizing!==false
     return routes.slice().sort(function(a,b){
         var att=bestStateKey && a.stateKey===bestStateKey?1:0
         var btt=bestStateKey && b.stateKey===bestStateKey?1:0
@@ -178,7 +179,7 @@ TreeSearchAI.prototype.orderRoutes = function(routes, ttEntry){
         var ah=historyTable[a.stateKey]||0
         var bh=historyTable[b.stateKey]||0
         if(ah!==bh)return bh-ah
-        return b.order-a.order
+        return maximizing?(b.order-a.order):(a.order-b.order)
     })
 }
 
@@ -197,7 +198,7 @@ TreeSearchAI.prototype.shouldExtendEndgame = function(gameData, stats){
 
 TreeSearchAI.prototype.searchRoot = function(gameData, depth){
     var ttEntry=this.getTranspositionEntry('s',gameData)
-    var routes=this.orderRoutes(this.generateRoutes(gameData),ttEntry)
+    var routes=this.orderRoutes(this.generateRoutes(gameData),ttEntry,true)
     if(!routes.length)return null
     var alpha=-this.MAX_SCORE
     var beta=this.MAX_SCORE
@@ -228,6 +229,9 @@ TreeSearchAI.prototype.searchState = function(gameData, depth, alpha, beta){
     if(gameData.winnerId!=null){
         return this.getTerminalScore(gameData)
     }
+    if(!gameData.edgeCount[gameData.EDGE_NOT]){
+        return this.solveExactEndgame(gameData)
+    }
     if(depth<=0){
         return this.searchQuiescence(
             gameData,
@@ -246,12 +250,12 @@ TreeSearchAI.prototype.searchState = function(gameData, depth, alpha, beta){
     alpha=ttInfo.alpha
     beta=ttInfo.beta
 
-    var routes=this.orderRoutes(this.generateRoutes(gameData),ttInfo.entry)
+    var maximizing=gameData.playerId===this.playerId
+    var routes=this.orderRoutes(this.generateRoutes(gameData),ttInfo.entry,maximizing)
     if(!routes.length){
         return this.evaluate(gameData)
     }
 
-    var maximizing=gameData.playerId===this.playerId
     var best=maximizing?-this.MAX_SCORE:this.MAX_SCORE
     var bestRoute=null
     for(var ii=0,route;route=routes[ii];ii++){
@@ -294,6 +298,9 @@ TreeSearchAI.prototype.searchQuiescence = function(gameData, depth, alpha, beta)
     if(gameData.winnerId!=null){
         return this.getTerminalScore(gameData)
     }
+    if(!gameData.edgeCount[gameData.EDGE_NOT]){
+        return this.solveExactEndgame(gameData)
+    }
     var stats=gameData.getRegionStats()
     var stand=this.evaluate(gameData)
     var shouldContinue=gameData.edgeCount[gameData.EDGE_NOW] || this.shouldExtendEndgame(gameData,stats)
@@ -319,12 +326,12 @@ TreeSearchAI.prototype.searchQuiescence = function(gameData, depth, alpha, beta)
         return stand
     }
 
-    var routes=this.orderRoutes(this.generateRoutes(gameData),ttInfo.entry)
+    var best=stand
+    var routes=this.orderRoutes(this.generateRoutes(gameData),ttInfo.entry,maximizing)
     if(!routes.length){
         return stand
     }
 
-    var best=stand
     var bestRoute=null
     for(var ii=0,route;route=routes[ii];ii++){
         this.checkSearchAbort()
@@ -777,14 +784,41 @@ TreeSearchAI.prototype.generateExactSafeRoutes = function(gameData){
     return this.collectRepresentativeRoutes(routes)
 }
 
+TreeSearchAI.prototype.getExactSacrificeBucketKey = function(analysis){
+    if(!analysis || !analysis.state)return null
+    var next=analysis.state
+    var stats=analysis.afterStats||next.getRegionStats()
+    return [
+        analysis.categoryKey,
+        analysis.geometryKey,
+        next.edgeCount[next.EDGE_NOW],
+        next.edgeCount[next.EDGE_NOT],
+        next.edgeCount[next.EDGE_WILL],
+        stats.scoreRegionNum,
+        stats.scoreCellNum,
+        stats.largeClosedNum,
+        stats.smallClosedNum,
+    ].join('|')
+}
+
 TreeSearchAI.prototype.generateExactSacrificeRoutes = function(gameData){
     var analyses=gameData.getSacrificeEdgeAnalyses()
     var routes=[]
+    var bucket={}
     for(var ii=0,analysis;analysis=analyses[ii];ii++){
         var route=this.makeRouteFromAnalysis(gameData,analysis,'sacrifice')
         if(route)routes.push(route)
+        var key=this.getExactSacrificeBucketKey(analysis)
+        if(!key || !route)continue
+        if(!bucket[key] || route.order>bucket[key].order){
+            bucket[key]=route
+        }
     }
-    return this.collectRepresentativeRoutes(routes)
+    var grouped=[]
+    for(var name in bucket){
+        grouped.push(bucket[name])
+    }
+    return this.collectRepresentativeRoutes(grouped)
 }
 
 TreeSearchAI.prototype.collectEdgeRoutes = function(gameData, edges, limit, tag){
@@ -1049,6 +1083,9 @@ TreeSearchAI.prototype.solveLateEndgameWithLimit = function(gameData, maxSafeEdg
     }
 
     var maximizing=gameData.playerId===this.playerId
+    if(!maximizing){
+        routes=routes.slice().reverse()
+    }
     var best=maximizing?-this.MAX_SCORE:this.MAX_SCORE
     for(var ii=0,route;route=routes[ii];ii++){
         var next=route.state||this.applyRouteToClone(gameData,route.moves)
