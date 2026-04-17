@@ -594,3 +594,50 @@ GameData.prototype.getMinConnectedRegion=function(){
     }
     return minRegion
 }
+GameData.prototype.getAllEdges=function(number){
+    var edges=[]
+    for(var jj=0;jj<2*this.ysize+1;jj++){
+        for(var ii=0;ii<2*this.xsize+1;ii++){
+            if(this.xy(ii,jj)===number){
+                edges.push({x:ii,y:jj})
+            }
+        }
+    }
+    return edges
+}
+GameData.prototype.getEdgeGroupedByRegion=function(edgeType){
+    var gameData=this
+    var result=[]
+    var seen={}
+    if(edgeType==null)edgeType=gameData.EDGE_WILL
+    for(var ii in gameData.connectedRegion){
+        var region=gameData.connectedRegion[ii]
+        if(!region)continue
+        // 从区域中找一条指定类型的边
+        var block=region.block
+        var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+        for(var jj=0,pt;pt=block[jj];jj++){
+            for(var kk=0,d;d=directions[kk];kk++){
+                var xx=pt.x+d.x,yy=pt.y+d.y
+                if(gameData.xy(xx,yy)===edgeType){
+                    var key=xx+','+yy
+                    if(!seen[key]){
+                        seen[key]=true
+                        result.push({x:xx,y:yy})
+                    }
+                    break
+                }
+            }
+            if(result.length>0 && jj===block.length-1) break
+        }
+    }
+    // 没有连通区域时（开局），直接收集所有边并按棋盘位置分散选取
+    if(result.length===0){
+        var all=gameData.getAllEdges(edgeType)
+        // 按区域采样：每4条取1条
+        for(var ii=0;ii<all.length;ii+=Math.max(1,~~(all.length/8))){
+            result.push(all[ii])
+        }
+    }
+    return result
+}
