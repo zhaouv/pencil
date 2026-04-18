@@ -973,21 +973,206 @@ TreeSearchAI.prototype.getExactSacrificeRegionCanonicalEdgeKey = function(gameDa
     ){
         return gameData.__exactSacrificeRegionCanonicalEdgeKeyCache[analysis.regionIndex]
     }
-    var regionEdges=[]
-    var analyses=gameData.getSacrificeEdgeAnalyses()
-    for(var ii=0,item;item=analyses[ii];ii++){
-        if(item.regionIndex!==analysis.regionIndex)continue
-        regionEdges.push(item.edgeKey)
+    var orderedEdgeKeys=this.getExactSacrificeRegionOrderedEdgeKeys(gameData,analysis)
+    var canonicalKey=null
+    if(orderedEdgeKeys.length>1){
+        canonicalKey=orderedEdgeKeys[1]
+    } else if(orderedEdgeKeys.length){
+        canonicalKey=orderedEdgeKeys[0]
     }
-    regionEdges.sort(function(a,b){
-        var aa=a.split(',').map(function(v){return +v})
-        var bb=b.split(',').map(function(v){return +v})
-        if(aa[1]!==bb[1])return aa[1]-bb[1]
-        return aa[0]-bb[0]
-    })
-    var canonicalKey=regionEdges.length>1?regionEdges[1]:regionEdges[0]
     gameData.__exactSacrificeRegionCanonicalEdgeKeyCache[analysis.regionIndex]=canonicalKey||null
     return canonicalKey||null
+}
+
+TreeSearchAI.prototype.compareExactSacrificePoints = function(a, b){
+    if(a.y!==b.y)return a.y-b.y
+    return a.x-b.x
+}
+
+TreeSearchAI.prototype.getExactSacrificeRegionNeighborMap = function(gameData, analysis){
+    if(!gameData || !analysis || analysis.regionIndex==null)return null
+    gameData.__exactSacrificeRegionNeighborMapCache=
+        gameData.__exactSacrificeRegionNeighborMapCache||{}
+    if(gameData.__exactSacrificeRegionNeighborMapCache[analysis.regionIndex]){
+        return gameData.__exactSacrificeRegionNeighborMapCache[analysis.regionIndex]
+    }
+    var region=gameData.connectedRegion[analysis.regionIndex]
+    if(!region || !region.block || !region.block.length)return null
+    var cellByKey={}
+    var neighborMap={}
+    var directions=[
+        {'x':0,'y':-2},
+        {'x':2,'y':0},
+        {'x':0,'y':2},
+        {'x':-2,'y':0},
+    ]
+    for(var ii=0,cell;cell=region.block[ii];ii++){
+        var key=[cell.x,cell.y].join(',')
+        cellByKey[key]={'x':cell.x,'y':cell.y}
+        neighborMap[key]=[]
+    }
+    for(var jj=0,item;item=region.block[jj];jj++){
+        var fromKey=[item.x,item.y].join(',')
+        for(var kk=0,d;d=directions[kk];kk++){
+            var nearKey=[item.x+d.x,item.y+d.y].join(',')
+            if(!cellByKey[nearKey])continue
+            neighborMap[fromKey].push(nearKey)
+        }
+    }
+    var info={
+        cellByKey:cellByKey,
+        neighborMap:neighborMap,
+    }
+    gameData.__exactSacrificeRegionNeighborMapCache[analysis.regionIndex]=info
+    return info
+}
+
+TreeSearchAI.prototype.getExactSacrificeRegionOrderedCells = function(gameData, analysis){
+    if(!gameData || !analysis || analysis.regionIndex==null)return []
+    gameData.__exactSacrificeRegionOrderedCellsCache=
+        gameData.__exactSacrificeRegionOrderedCellsCache||{}
+    if(gameData.__exactSacrificeRegionOrderedCellsCache[analysis.regionIndex]){
+        return gameData.__exactSacrificeRegionOrderedCellsCache[analysis.regionIndex]
+    }
+    var topology=this.getExactSacrificeRegionTopology(gameData,analysis)
+    var info=this.getExactSacrificeRegionNeighborMap(gameData,analysis)
+    if(!topology || !info)return []
+    var region=gameData.connectedRegion[analysis.regionIndex]
+    var cells=region.block.map(function(cell){
+        return {'x':cell.x,'y':cell.y}
+    })
+    var self=this
+    cells.sort(function(a,b){
+        return self.compareExactSacrificePoints(a,b)
+    })
+    if(topology.size<=1){
+        gameData.__exactSacrificeRegionOrderedCellsCache[analysis.regionIndex]=cells
+        return cells
+    }
+    var ordered=[]
+    if(topology.isRing){
+        var start=cells[0]
+        var startKey=[start.x,start.y].join(',')
+        var neighborKeys=(info.neighborMap[startKey]||[]).slice()
+        neighborKeys.sort(function(a,b){
+            return self.compareExactSacrificePoints(
+                info.cellByKey[a],
+                info.cellByKey[b]
+            )
+        })
+        var prevKey=startKey
+        var currentKey=neighborKeys[0]
+        ordered.push(start)
+        while(currentKey && currentKey!==startKey && ordered.length<=topology.size){
+            ordered.push(info.cellByKey[currentKey])
+            var nextKeys=(info.neighborMap[currentKey]||[]).filter(function(key){
+                return key!==prevKey
+            })
+            prevKey=currentKey
+            currentKey=nextKeys[0]
+        }
+    } else {
+        var endpointKeys=[]
+        for(var key in info.neighborMap){
+            if(info.neighborMap[key].length<=1){
+                endpointKeys.push(key)
+            }
+        }
+        endpointKeys.sort(function(a,b){
+            return self.compareExactSacrificePoints(
+                info.cellByKey[a],
+                info.cellByKey[b]
+            )
+        })
+        var current=endpointKeys.length?endpointKeys[0]:[cells[0].x,cells[0].y].join(',')
+        var prev=null
+        while(current){
+            ordered.push(info.cellByKey[current])
+            var nextCandidates=(info.neighborMap[current]||[]).filter(function(key){
+                return key!==prev
+            })
+            prev=current
+            current=nextCandidates.length?nextCandidates[0]:null
+        }
+    }
+    gameData.__exactSacrificeRegionOrderedCellsCache[analysis.regionIndex]=ordered
+    return ordered
+}
+
+TreeSearchAI.prototype.getExactSacrificeOpenEdgeKeysFromCell = function(gameData, cell){
+    var edgeKeys=[]
+    var directions=[
+        {'x':0,'y':-1},
+        {'x':1,'y':0},
+        {'x':0,'y':1},
+        {'x':-1,'y':0},
+    ]
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx=cell.x+d.x
+        var yy=cell.y+d.y
+        if(gameData.xy(xx,yy)!==gameData.EDGE_WILL)continue
+        edgeKeys.push([xx,yy].join(','))
+    }
+    var self=this
+    edgeKeys.sort(function(a,b){
+        var aa=a.split(',').map(function(v){return +v})
+        var bb=b.split(',').map(function(v){return +v})
+        return self.compareExactSacrificePoints(
+            {'x':aa[0],'y':aa[1]},
+            {'x':bb[0],'y':bb[1]}
+        )
+    })
+    return edgeKeys
+}
+
+TreeSearchAI.prototype.getExactSacrificeRegionOrderedEdgeKeys = function(gameData, analysis){
+    if(!gameData || !analysis || analysis.regionIndex==null)return []
+    gameData.__exactSacrificeRegionOrderedEdgeKeyCache=
+        gameData.__exactSacrificeRegionOrderedEdgeKeyCache||{}
+    if(gameData.__exactSacrificeRegionOrderedEdgeKeyCache[analysis.regionIndex]){
+        return gameData.__exactSacrificeRegionOrderedEdgeKeyCache[analysis.regionIndex]
+    }
+    var topology=this.getExactSacrificeRegionTopology(gameData,analysis)
+    var orderedCells=this.getExactSacrificeRegionOrderedCells(gameData,analysis)
+    var edgeKeys=[]
+    if(!topology || !orderedCells.length){
+        return edgeKeys
+    }
+    if(topology.size===1){
+        edgeKeys=this.getExactSacrificeOpenEdgeKeysFromCell(gameData,orderedCells[0])
+        gameData.__exactSacrificeRegionOrderedEdgeKeyCache[analysis.regionIndex]=edgeKeys
+        return edgeKeys
+    }
+    if(topology.isRing){
+        for(var ii=0;ii<orderedCells.length;ii++){
+            var from=orderedCells[ii]
+            var to=orderedCells[(ii+1)%orderedCells.length]
+            edgeKeys.push([(from.x+to.x)/2,(from.y+to.y)/2].join(','))
+        }
+        gameData.__exactSacrificeRegionOrderedEdgeKeyCache[analysis.regionIndex]=edgeKeys
+        return edgeKeys
+    }
+    var firstCell=orderedCells[0]
+    var secondCell=orderedCells[1]
+    var firstInner=[(firstCell.x+secondCell.x)/2,(firstCell.y+secondCell.y)/2].join(',')
+    var firstOpen=this.getExactSacrificeOpenEdgeKeysFromCell(gameData,firstCell).filter(function(key){
+        return key!==firstInner
+    })
+    if(firstOpen.length)edgeKeys.push(firstOpen[0])
+    for(var jj=0;jj<orderedCells.length-1;jj++){
+        var cellA=orderedCells[jj]
+        var cellB=orderedCells[jj+1]
+        edgeKeys.push([(cellA.x+cellB.x)/2,(cellA.y+cellB.y)/2].join(','))
+    }
+    var lastCell=orderedCells[orderedCells.length-1]
+    var prevCell=orderedCells[orderedCells.length-2]
+    var lastInner=[(lastCell.x+prevCell.x)/2,(lastCell.y+prevCell.y)/2].join(',')
+    var lastOpen=this.getExactSacrificeOpenEdgeKeysFromCell(gameData,lastCell).filter(function(key){
+        return key!==lastInner
+    })
+    if(lastOpen.length)edgeKeys.push(lastOpen[0])
+    gameData.__exactSacrificeRegionOrderedEdgeKeyCache[analysis.regionIndex]=edgeKeys
+    return edgeKeys
 }
 
 TreeSearchAI.prototype.shouldGroupExactSacrificeRegion = function(gameData, analysis){
