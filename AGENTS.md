@@ -21,6 +21,7 @@
   - 从 `Game` 派生给 AI 使用的盘面数据结构 `GameData`。
   - 维护边分类、联通区域、区域取边、安全步结构分析，以及 Phase 4 结构评估特征抽取等 AI 辅助能力。
   - 当前 `getScoreRegions()` 已改成按实时区域扫描 `SCORE_3`，不再信任 live 增量路径里可能漂移的原始 `scoreRegion` 列表。
+  - 当前已额外支持“最后一个结构机会”的显式摘要，能区分 `owner / handoff / beneficiary`，其中 beneficiary 仅在显式请求 `getStructureOpportunitySummary(null, true)` 时计算，避免拖慢常规搜索路径。
 - `player.js`
   - 玩家抽象 `GamePlayer`。
   - 本地玩家、网络玩家、AI 基类。
@@ -97,7 +98,8 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - `node ts_cases.js`
   - 其中 `ring4_sacrifice_choice` 当前会固定选出 `2,1`
   - 其中 `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
-  - 其中 `late_safe_window_choice` 当前会固定选出 `12,3`
+  - 其中 `late_safe_window_choice` 当前会固定选出 `11,12`（同指纹等价代表边）
+  - 其中 `late_structure_opportunity_handoff_after_12_11` 当前会固定识别为 `lastOpportunityOwnerSign=-1 / lastOpportunityBeneficiarySign=-1`
   - 其中 `small_chain_sacrifice_middle_preference` 当前会固定选出 `11,6`
   - 其中 `score_then_small_chain_middle_route` 当前会固定生成 `3,12 -> 11,6`
 - `exact_score_prefix_control_only` 当前会固定保持：

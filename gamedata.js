@@ -167,6 +167,7 @@ GameData.prototype.clearTransientCache=function(){
     this.__irrelevantEdges=null
     this.__controlSwingStructures=null
     this.__structureOpportunitySummary=null
+    this.__structureOpportunitySummaryWithBeneficiary=null
     this.__boardKey=null
 }
 GameData.prototype.clone=function(){
@@ -965,6 +966,7 @@ GameData.prototype.getEvalFeatures=function(){
         currentOwnedOpportunityZoneNum:0,
         opponentOwnedOpportunityZoneNum:0,
         lastOpportunityOwnerSign:0,
+        lastOpportunityBeneficiarySign:0,
         lastCriticalSplitZone:0,
         structureOpportunitySignature:'none',
     }
@@ -1029,7 +1031,7 @@ GameData.prototype.getEvalFeatures=function(){
         features.irrelevantEdgeCount=gameData.getIrrelevantEdges(analyses).length
         features.controlSwingCount=gameData.getControlSwingStructures(analyses).length
         if(safeEdgeCount<=12){
-            var opportunity=gameData.getStructureOpportunitySummary(analyses)
+            var opportunity=gameData.getStructureOpportunitySummary(analyses,false)
             features.structureOpportunityZoneNum=opportunity.zoneNum
             features.splitOpportunityZoneNum=opportunity.splitZoneNum
             features.criticalSplitZoneNum=opportunity.criticalSplitZoneNum
@@ -1039,6 +1041,7 @@ GameData.prototype.getEvalFeatures=function(){
             features.currentOwnedOpportunityZoneNum=opportunity.currentOwnedOpportunityZoneNum
             features.opponentOwnedOpportunityZoneNum=opportunity.opponentOwnedOpportunityZoneNum
             features.lastOpportunityOwnerSign=opportunity.lastOpportunityOwnerSign
+            features.lastOpportunityBeneficiarySign=opportunity.lastOpportunityBeneficiarySign
             features.lastCriticalSplitZone=opportunity.criticalSplitZoneNum===1?1:0
             features.structureOpportunitySignature=opportunity.signature
         }
@@ -1165,6 +1168,7 @@ GameData.prototype.getDelayedOpportunityInfo=function(zone, baseCriticalKey, bas
         var secondNoRingKey=this.getOpportunityNoRingKey(secondStats)
         if(secondNoRingKey===baseNoRingKey)continue;
         delayedPaths.push({
+            firstEdge:first.edge,
             firstState:first.state,
             secondEdge:second.edge,
         })
@@ -1203,10 +1207,154 @@ GameData.prototype.getDelayedOpportunityInfo=function(zone, baseCriticalKey, bas
         exists:true,
         blockable:allBlockable,
         pathCount:delayedPaths.length,
+        paths:delayedPaths,
     }
 }
-GameData.prototype.getStructureOpportunitySummary=function(analyses){
-    if(!analyses && this.__structureOpportunitySummary)return this.__structureOpportunitySummary
+GameData.prototype.estimateOpportunityOutcomeValue=function(state, rootPlayerId){
+    if(!state)return 0
+    var stats=state.getRegionStats()
+    var currentSign=state.playerId===rootPlayerId?1:-1
+    var value=
+        (state.player[rootPlayerId].score-state.player[1-rootPlayerId].score)*10000
+    value+=currentSign*120
+    value+=state.edgeCount[state.EDGE_NOW]*currentSign*50
+    value+=state.edgeCount[state.EDGE_NOT]*2
+    value-=state.edgeCount[state.EDGE_WILL]*6
+    value+=stats.scoreCellNum*currentSign*32
+    value-=stats.smallClosedNum*80
+    value+=stats.largeNonRingNum*currentSign*220
+    value+=stats.largeRingNum*currentSign*150
+    value+=stats.boundaryLargeClosedNum*currentSign*70
+    value+=stats.innerLargeClosedNum*currentSign*110
+    value+=stats.maxClosedSize*currentSign*18
+    return value
+}
+GameData.prototype.getOpportunityOutcomeValue=function(state, rootPlayerId){
+    if(!state)return null
+    GameData.__opportunityOutcomeCache=GameData.__opportunityOutcomeCache||{}
+    var cacheKey=rootPlayerId+'|'+state.getBoardKey()
+    if(GameData.__opportunityOutcomeCache[cacheKey]!=null){
+        return GameData.__opportunityOutcomeCache[cacheKey]
+    }
+    var value=null
+    if(typeof TreeSearchAI!=='undefined'){
+        var safeEdgeCount=state.countSafeEdges()
+        var ai=new TreeSearchAI()
+        ai.playerId=rootPlayerId
+        ai.exactEndgameCache={}
+        if(!state.edgeCount[state.EDGE_NOT]){
+            value=ai.solveExactEndgame(state)
+        } else if(safeEdgeCount<=2){
+            value=ai.solveLateEndgameWithLimit(state,safeEdgeCount)
+        }
+    }
+    if(value==null){
+        value=this.estimateOpportunityOutcomeValue(state, rootPlayerId)
+    }
+    GameData.__opportunityOutcomeCache[cacheKey]=value
+    return value
+}
+GameData.prototype.getDelayedOpportunityBeneficiaryValue=function(
+    record,
+    rootPlayerId,
+    baseNoRingKey
+){
+    if(
+        !record ||
+        !record.delayedInfo ||
+        !record.delayedInfo.paths ||
+        !record.delayedInfo.paths.length
+    )return 0
+    var grouped={}
+    for(var ii=0,path;path=record.delayedInfo.paths[ii];ii++){
+        var pathKey=[path.firstEdge.x,path.firstEdge.y].join(',')
+        if(!grouped[pathKey]){
+            grouped[pathKey]={
+                values:[],
+            }
+        }
+        var group=grouped[pathKey]
+        var secondState=this.applyEdgeClone(path.firstState,path.secondEdge)
+        if(secondState){
+            group.values.push(
+                this.getOpportunityOutcomeValue(secondState,rootPlayerId)
+            )
+        }
+        if(record.kind!=='delayed-opponent')continue;
+        var blockerSeen={}
+        var blockerEdges=path.firstState.getAllEdges(path.firstState.EDGE_WILL)
+        for(var jj=0,blocker;blocker=blockerEdges[jj];jj++){
+            if(!this.isNearbyOpportunityEdge(blocker,record.zone))continue;
+            var blockedState=this.applyEdgeClone(path.firstState,blocker)
+            if(!blockedState)continue;
+            var followState=this.applyEdgeClone(blockedState,path.secondEdge)
+            if(
+                followState &&
+                this.getOpportunityNoRingKey(followState.getRegionStats())!==baseNoRingKey
+            )continue;
+            var blockedKey=blockedState.getBoardKey()
+            if(blockerSeen[blockedKey])continue;
+            blockerSeen[blockedKey]=true
+            group.values.push(
+                this.getOpportunityOutcomeValue(blockedState,rootPlayerId)
+            )
+        }
+    }
+    var best=null
+    for(var key in grouped){
+        var values=grouped[key].values
+        if(!values.length)continue;
+        var choiceValue=values[0]
+        for(var kk=1;kk<values.length;kk++){
+            if(record.kind==='delayed-opponent'){
+                if(values[kk]<choiceValue)choiceValue=values[kk]
+            } else {
+                if(values[kk]>choiceValue)choiceValue=values[kk]
+            }
+        }
+        if(best==null || choiceValue>best){
+            best=choiceValue
+        }
+    }
+    return best==null?0:best
+}
+GameData.prototype.getLastOpportunityBeneficiarySign=function(record){
+    if(!record)return 0
+    if(this.countSafeEdges()>2)return 0
+    var rootPlayerId=this.playerId
+    var value=0
+    if(record.kind==='immediate-current'){
+        value=null
+        for(var ii=0,item;item=record.zone[ii];ii++){
+            var itemValue=this.getOpportunityOutcomeValue(item.state,rootPlayerId)
+            if(value==null || itemValue>value)value=itemValue
+        }
+    } else if(
+        record.kind==='delayed-current' ||
+        record.kind==='delayed-opponent'
+    ){
+        value=this.getDelayedOpportunityBeneficiaryValue(
+            record,
+            rootPlayerId,
+            this.getOpportunityNoRingKey()
+        )
+    }
+    if(value>0)return 1
+    if(value<0)return -1
+    return 0
+}
+GameData.prototype.getStructureOpportunitySummary=function(analyses, includeBeneficiary){
+    if(includeBeneficiary==null)includeBeneficiary=!analyses
+    if(
+        !analyses &&
+        (
+            includeBeneficiary?
+                this.__structureOpportunitySummaryWithBeneficiary:
+                this.__structureOpportunitySummary
+        )
+    )return includeBeneficiary?
+        this.__structureOpportunitySummaryWithBeneficiary:
+        this.__structureOpportunitySummary
     analyses=analyses||this.getSafeEdgeAnalyses()
     var summary={
         zoneNum:0,
@@ -1217,11 +1365,16 @@ GameData.prototype.getStructureOpportunitySummary=function(analyses){
         currentOwnedOpportunityZoneNum:0,
         opponentOwnedOpportunityZoneNum:0,
         lastOpportunityOwnerSign:0,
+        lastOpportunityBeneficiarySign:0,
         signature:'none',
     }
     if(!analyses.length){
         if(!arguments.length || analyses===this.__safeEdgeAnalyses){
-            this.__structureOpportunitySummary=summary
+            if(includeBeneficiary){
+                this.__structureOpportunitySummaryWithBeneficiary=summary
+            } else {
+                this.__structureOpportunitySummary=summary
+            }
         }
         return summary
     }
@@ -1233,6 +1386,7 @@ GameData.prototype.getStructureOpportunitySummary=function(analyses){
 
     var visited={}
     var zoneKeys=[]
+    var ownedZoneRecords=[]
     var baseCriticalKey=this.getOpportunityCriticalKey(this.getRegionStats())
     var baseNoRingKey=this.getOpportunityNoRingKey(this.getRegionStats())
     for(var start=0;start<analyses.length;start++){
@@ -1282,6 +1436,10 @@ GameData.prototype.getStructureOpportunitySummary=function(analyses){
         if(criticalList.length>1){
             summary.criticalSplitZoneNum++
             summary.currentOwnedOpportunityZoneNum++
+            ownedZoneRecords.push({
+                kind:'immediate-current',
+                zone:zone,
+            })
             zoneKeys.push([
                 'owned-current-immediate',
                 zone.length,
@@ -1297,8 +1455,18 @@ GameData.prototype.getStructureOpportunitySummary=function(analyses){
             if(delayedInfo.blockable){
                 summary.blockableDeferredCriticalSplitZoneNum++
                 summary.opponentOwnedOpportunityZoneNum++
+                ownedZoneRecords.push({
+                    kind:'delayed-opponent',
+                    zone:zone,
+                    delayedInfo:delayedInfo,
+                })
             } else {
                 summary.currentOwnedOpportunityZoneNum++
+                ownedZoneRecords.push({
+                    kind:'delayed-current',
+                    zone:zone,
+                    delayedInfo:delayedInfo,
+                })
             }
             zoneKeys.push([
                 delayedInfo.blockable?'owned-opponent-delayed':'owned-current-delayed',
@@ -1320,17 +1488,29 @@ GameData.prototype.getStructureOpportunitySummary=function(analyses){
         } else if(summary.opponentOwnedOpportunityZoneNum===1){
             summary.lastOpportunityOwnerSign=-1
         }
+        if(includeBeneficiary && ownedZoneRecords.length===1){
+            summary.lastOpportunityBeneficiarySign=
+                this.getLastOpportunityBeneficiarySign(ownedZoneRecords[0])
+        }
     }
     if(zoneKeys.length){
         summary.signature=zoneKeys.sort().join('/')
+        if(includeBeneficiary && summary.lastOpportunityBeneficiarySign){
+            summary.signature+='|beneficiary:'+
+                (summary.lastOpportunityBeneficiarySign>0?'current':'opponent')
+        }
     }
     if(!arguments.length || analyses===this.__safeEdgeAnalyses){
-        this.__structureOpportunitySummary=summary
+        if(includeBeneficiary){
+            this.__structureOpportunitySummaryWithBeneficiary=summary
+        } else {
+            this.__structureOpportunitySummary=summary
+        }
     }
     return summary
 }
 GameData.prototype.getStructureOpportunityFingerprint=function(analyses){
-    return this.getStructureOpportunitySummary(analyses).signature
+    return this.getStructureOpportunitySummary(analyses,false).signature
 }
 GameData.prototype.getSafeEdgeAnalyses=function(){
     if(this.__safeEdgeAnalyses)return this.__safeEdgeAnalyses

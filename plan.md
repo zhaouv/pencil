@@ -73,11 +73,14 @@
         - `11,8` 后与 `11,8 -> 6,11` 后的结构机会签名已能区分
         - 末尾补充说明里的特殊局部也已补进状态摘要：`[0,11][1,12]` 这类需要两手兑现、但会被 `[2,11]` 一手 sacrifice 封死的机会，现单独记为 `deferred + blockable`
         - 本轮又补了第一版 `owner / handoff` 摘要：当前方拥有几个机会、对手拥有几个机会、是否只剩最后一个机会且归谁
-      - 下一步把这组断言继续收紧到“最后一个机会对应的目标 outcome 归谁受益”，而不是只看 action owner
+      - 本轮已把这组断言继续收紧到“最后一个机会对应的目标 outcome 归谁受益”：
+        - `GameData` 显式新增 `lastOpportunityBeneficiarySign`
+        - `late_structure_opportunity_handoff_after_12_11` 现固定为 `lastOpportunityOwnerSign=-1` 且 `lastOpportunityBeneficiarySign=-1`
+      - 下一步不是重复补状态，而是把这层 beneficiary 信号以低成本方式接进 late eval / fingerprint；本轮直接在常规评估里调用局部 exact 会把 `ts_cases.js` 从约 `16s` 拉到约 `58s`，因此已回退
     - 优先补状态抽象缺口，而不是先调一般权重：
       - 本轮已给 `GameData` 增加第一版“结构机会区签名 / critical split zone”信息
       - 已把这类签名并进 `controlFingerprint / route fingerprint`
-      - 下一步继续把“最后一个结构机会归属谁 / 被谁拿走”补成显式状态，而不是只停留在 zone 计数
+      - “最后一个结构机会归属谁 / 被谁拿走 / outcome 对谁有利”现都已有显式摘要；下一步改成把 beneficiary 变成可负担的搜索信号，而不是再加新的 zone 计数
     - 在上面这层状态表达落地后，再继续修 exact 内部候选缺口，优先查：
       - 多得分区切换时的 exact prefix 是否漏分支
       - 长链 / 长环 `control` 已补后，是否仍存在更复杂区域的 `leave-control` 断口
@@ -487,7 +490,8 @@
   - `node -e "require('./game.js'); require('./gamedata.js'); require('./player.js'); require('./treeSearch.js'); console.log('core ok')"`
   - `ring4_sacrifice_choice` 当前会固定选出 `2,1`
   - `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
-  - `late_safe_window_choice` 当前会固定选出 `12,3`
+  - `late_safe_window_choice` 当前会固定选出 `11,12`（同指纹等价代表边）
+  - `late_structure_opportunity_handoff_after_12_11` 当前会固定识别为 `lastOpportunityOwnerSign=-1 / lastOpportunityBeneficiarySign=-1`
   - `small_chain_sacrifice_middle_preference` 当前会固定选出 `11,6`
   - `score_then_small_chain_middle_route` 当前会固定生成 `3,12 -> 11,6`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `1:0`，平均步数 `78`
@@ -519,11 +523,17 @@
 - 本轮又把 `owner / handoff` 落成了第三层状态：
   - 新增 `currentOwnedOpportunityZoneNum / opponentOwnedOpportunityZoneNum / lastOpportunityOwnerSign`
   - 并补了 `late_structure_opportunity_handoff_after_12_11`，固定“只剩最后一个机会且 action owner 已交给对手”的节点
-  - 当前这层仍只表达“谁掌握动作控制权”，还没有表达“哪个 outcome 对哪一方更有利”
+  - 这一层现在已经不是终点；本轮又继续补出了 beneficiary 层
+- 本轮又把 `outcome-beneficiary` 落成了第四层状态：
+  - 新增 `lastOpportunityBeneficiarySign`
+  - 当前通过 `getStructureOpportunitySummary(null, true)` 显式计算，只在 `safeEdgeCount<=2` 且只剩一个机会区时启用
+  - `late_structure_opportunity_handoff_after_12_11` 现固定为 `owner=-1 / beneficiary=-1`
+  - 这层信息目前刻意没有并回常规 `getEvalFeatures()` / `controlFingerprint`，因为直接在主搜索路径里调用会把 `ts_cases.js` 从约 `16s` 拉高到约 `58s`
 - 本轮已把 `6,9 -> 11,8 -> 6,11` 的主样例固定进 `ts_cases.js`：
   - `6,9` 后根选点现固定为 `6,11`
   - `11,8` 后会识别出更多结构机会
-  - `11,8 -> 6,11` 后现在还会识别出一个 `deferred + blockable` 的局部机会，但当前还没有显式表达“最后一个决定性结构机会归属谁”
+  - `11,8 -> 6,11` 后现在还会识别出一个 `deferred + blockable` 的局部机会
+  - `11,8 -> 6,11 -> 10,11 -> 12,11` 后现在已能显式表达“最后一个决定性结构机会的动作控制权和 outcome 受益方都归对手”
 - `late_safe_window_choice` 的代表边已从旧的 `12,3` 切到同指纹的 `11,12`，回归已放宽为等价代表边断言
 - 新 spot check：
   - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前为 `TS 1:0 OK`，平均步数 `69`，约 `44.8s`
@@ -547,9 +557,9 @@
   - 这一轮已补上第一版 `structure opportunity zone` 的显式表达，并接进了评估和 route fingerprint
   - 这一轮又补上了 `deferred + blockable` 的第二层表达，能区分“理论机会”和“会被一手 sacrifice 封死的机会”
   - 这一轮又补上了 `owner / handoff` 的第三层表达，已经能区分“动作控制权”是否交接
-  - 当前仍不足的是“最后一个机会对应的目标 outcome 归谁受益”，也就是 action owner 和 winning owner 还没有拆开
-  - 例如 `11,8 -> 6,11 -> 10,11 -> 12,11` 之后，当前实现已能看见“最后一个动作机会归对手”，但还不能直接表达“这个 outcome 对哪一方更有利”
-  - 因而下一轮应先把 outcome-beneficiary 级状态补完，再决定是否把这层信号真正抬进 late eval
+  - 本轮又补上了 `outcome-beneficiary` 的第四层表达，已经能区分“这个最后机会的结果最终对谁有利”
+  - 例如 `11,8 -> 6,11 -> 10,11 -> 12,11` 之后，当前实现现已固定识别为“最后一个动作机会归对手，且 outcome 也归对手受益”
+  - 当前真正剩下的不是“有没有这层状态”，而是“如何不靠重复局部 exact，也能把这层信号低成本抬进 late eval / fingerprint”
 
 ### 评估函数建议特征
 

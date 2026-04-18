@@ -523,6 +523,7 @@ var CASES = [
             maxCurrentOwnedOpportunityZones: 0,
             minOpponentOwnedOpportunityZones: 1,
             lastOpportunityOwnerSign: -1,
+            lastOpportunityBeneficiarySign: -1,
         },
     },
     {
@@ -901,6 +902,7 @@ for (var cc = 0; cc < CASES.length; cc++) {
             caseDef.expect.minOpponentOwnedOpportunityZones != null ||
             caseDef.expect.maxOpponentOwnedOpportunityZones != null ||
             caseDef.expect.lastOpportunityOwnerSign != null ||
+            caseDef.expect.lastOpportunityBeneficiarySign != null ||
             caseDef.expect.lastCriticalSplitZone != null ||
             caseDef.expect.structureOpportunitySignature != null
         ) {
@@ -1058,6 +1060,14 @@ for (var cc = 0; cc < CASES.length; cc++) {
                     caseDef.expect.lastOpportunityOwnerSign,
                 caseDef.name + ' lastOpportunityOwnerSign mismatch: ' +
                     explicitOpportunity.lastOpportunityOwnerSign
+            )
+        }
+        if (caseDef.expect.lastOpportunityBeneficiarySign != null) {
+            assertCase(
+                explicitOpportunity.lastOpportunityBeneficiarySign ===
+                    caseDef.expect.lastOpportunityBeneficiarySign,
+                caseDef.name + ' lastOpportunityBeneficiarySign mismatch: ' +
+                    explicitOpportunity.lastOpportunityBeneficiarySign
             )
         }
         if (caseDef.expect.structureOpportunitySignature != null) {
