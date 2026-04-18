@@ -78,6 +78,9 @@
         - `late_structure_opportunity_handoff_after_12_11` 现固定为 `lastOpportunityOwnerSign=-1` 且 `lastOpportunityBeneficiarySign=-1`
       - 本轮已先把廉价的 `owner / handoff` 信号接进 `TreeSearchAI.evaluateStructure()`，让 `safe<=12` 的 late eval 能直接看见 `currentOwnedOpportunityZoneNum / opponentOwnedOpportunityZoneNum / lastOpportunityOwnerSign`
       - 本轮又把 beneficiary 这层信号窄接到了 `safe 4 -> 2` 的 safe route ordering / late exact 入口，并给机会局部 exact 增加了按 `playerId` 共享的 cache
+      - 本轮又把 `exact sacrifice bucket` 的几何方向 `h / v` 从 key 里去掉，先做保守压缩：
+        - `exact_root_sacrifice_choice` 的 exact 根节点现已从 `20` 降到 `16`
+        - `ring4_sacrifice_choice` 的 exact 根节点现已从 `10` 降到 `8`
       - 下一步不是重复补状态，而是继续验证这层 beneficiary ordering 是否值得扩大范围；它仍不适合直接塞进 `evaluateStructure()` 的 hot path
         - 另外，当前 `estimateOpportunityOutcomeValue()` 对经典 handoff 的 `allow / block` 两个 outcome 仍都会给出正分，不能直接拿“纯静态替 exact”来接这层信号
     - 优先补状态抽象缺口，而不是先调一般权重：
@@ -102,7 +105,7 @@
 
 ## 总体策略
 
-持续运行直到完成计划, 文档和代码同步, 自行判断git commit的时机, commit后全面review计划(可以调整), 然后继续计划
+持续运行直到完成计划, 文档和代码同步, 自行判断git commit的时机, commit后全面review计划(可以调整), 然后继续计划直到完成
 
 - 先把 `TreeSearchAI` 做成“稳定、合法、可重复评测”的 AI
 - 优先把 `README.md` 里的点格棋分析落地成代码中的显式概念，而不是只堆通用搜索
@@ -541,14 +544,19 @@
   - `11,8 -> 6,11 -> 10,11 -> 12,11` 后现在已能显式表达“最后一个决定性结构机会的动作控制权和 outcome 受益方都归对手”
 - `late_safe_window_choice` 的代表边已从旧的 `12,3` 切到同指纹的 `11,12`，回归已放宽为等价代表边断言
 - 新 spot check：
-  - `time node ts_cases.js` 当前约 `23.9s`
-  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前为 `TS 1:0 OK`，平均步数 `67`，约 `37.7s`
+  - `time node ts_cases.js` 当前约 `21.4s`
+  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前为 `TS 1:0 OK`，平均步数 `67`，约 `31.7s`
 - 固定局面样例还缺：
   - 边界链与内部链混合
   - 更强的“最后一个决定性结构机会归属 / 交接”断言
 - 已有 `--seed` 支持，但还没有基于固定 seed 集的更大样本 benchmark
 - `controlSwing`、大区域归属和 transition 阶段的权重仍然偏经验值，需要结合输局继续校正
 - 当前无安全步精确收官虽然已补 exact TT、根结点 exact 路线直切、小得分区 score route 校验、live `scoreRegion` 实时扫描、长链 / 长环 `score-control`、`EDGE_NOT<=5` 的小安全边数 exact，且部分状态可把最大 exact 分支从 `43` 压到 `26`，并把 `seed=8` 固定输局翻成赢局，但最新整局 spot check 仍会遇到 `40` 路左右的 exact 状态，且当前版本 `ts vs ok` 的 2+2 仍耗时约 `9m48s`，因此 exact 内部候选和分支压缩仍未完成
+- 本轮又补了一层保守的 exact 分支压缩：
+  - `getExactSacrificeBucketKey()` 现忽略几何方向 `h / v`
+  - 已验证 `exact_root_sacrifice_choice` 的 exact 根节点从 `20` 降到 `16`
+  - 已验证 `ring4_sacrifice_choice` 的 exact 根节点从 `10` 降到 `8`
+  - 当前还没有把这条结论外推到 `seed=7 / ply=43`，下一步仍需专门复核热点本身
 - 当前已抓到一个更具体的性能瓶颈样本：
   - `seed=7` 的 `ply=43` 是 `0/0/42` 的纯 sacrifice endgame
   - 该状态当前会生成 `20` 条 exact route
@@ -566,6 +574,7 @@
   - 本轮又补上了 `outcome-beneficiary` 的第四层表达，已经能区分“这个最后机会的结果最终对谁有利”
   - 例如 `11,8 -> 6,11 -> 10,11 -> 12,11` 之后，当前实现现已固定识别为“最后一个动作机会归对手，且 outcome 也归对手受益”
   - 本轮又把 beneficiary 窄接进了 `safe 4 -> 2` 的 route ordering，说明这层状态已经开始进入主搜索
+  - 本轮又把 exact sacrifice bucket 做了保守压缩，至少在固定收官样例里已经看到根节点数下降而不改最佳解
   - 当前真正剩下的不是“有没有这层状态”，而是“是否值得继续把 beneficiary 从 `safe 4 -> 2` 扩到更宽的 late exact 入口，以及怎样控制它的调用成本”
 
 ### 评估函数建议特征

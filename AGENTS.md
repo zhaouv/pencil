@@ -30,7 +30,7 @@
   - `TreeSearchAI` 的实验性搜索实现。
   - 当前版本使用 clone-based 回合级路线搜索、alpha-beta、迭代加深、TT、结构评估和无安全步精确收官求解。
   - 已能稳定生成“全吃 / 留最后一口 / 双格链让分 / 四环让分”这类基础路线，并带有“连续无关步快进”和收官延伸搜索骨架。
-  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错、一个根结点让分被普通候选上限截断、一个“小得分区存在 `EDGE_NOW` 但 score route 为空”的候选缺口、一个 live `scoreRegion` 漂移导致 exact score route 直接为空的查询缺口，以及“长链 / 长环只会在 `chain2 / ring4` 才生成 `score-control`”的枚举缺口；本轮又把“小安全边数 late endgame”正式接进 `searchState / searchQuiescence`，当前精确窗口为 `EDGE_NOT <= 5`，补了“小链让分时优先选中间边而不是边界边”的 tie-break，把结构机会的 `owner / handoff` 摘要低成本接进了 `evaluateStructure()`，并把 beneficiary 窄接到了 `safe 4 -> 2` 的 safe route ordering，但强度和性能仍未达标。
+  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错、一个根结点让分被普通候选上限截断、一个“小得分区存在 `EDGE_NOW` 但 score route 为空”的候选缺口、一个 live `scoreRegion` 漂移导致 exact score route 直接为空的查询缺口，以及“长链 / 长环只会在 `chain2 / ring4` 才生成 `score-control`”的枚举缺口；本轮又把“小安全边数 late endgame”正式接进 `searchState / searchQuiescence`，当前精确窗口为 `EDGE_NOT <= 5`，补了“小链让分时优先选中间边而不是边界边”的 tie-break，把结构机会的 `owner / handoff` 摘要低成本接进了 `evaluateStructure()`，把 beneficiary 窄接到了 `safe 4 -> 2` 的 safe route ordering，并把 exact sacrifice bucket 的几何方向 `h / v` 从 key 里去掉做保守压缩，但强度和性能仍未达标。
 - `server.js`
   - `socket.io` 对战服务器，默认监听 `5050`。
   - 管理随机匹配、指定房间、观战和棋谱广播。
@@ -163,6 +163,12 @@ node aivsai.js -1 ts -2 ok -n 5 -s
 - 本轮已补 exact TT，并把部分状态的最大 exact 分支从 `43` 压到 `26`
 - 本轮又补了根结点无安全步直切 exact 路线集、小得分区 score route 兜底、live `scoreRegion` 实时扫描、长链 / 长环 `score-control` prefix，以及 `EDGE_NOT<=5` 的小安全边数 exact 窗口；当前带 seed 的单局 spot check 仍需几十秒到 `1m30s` 左右，而 `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 整体仍耗时约 `9m48s`
 - 当前已定位出的最新慢局热点是 `seed=7` 的 `ply=43`：该状态进入 `0/0/42` 的纯 sacrifice endgame 后仍有 `20` 条 exact route，`solveLateEndgame()` 单点约跑 `66,971` 个 exact 节点、耗时约 `36s`
+- 本轮已先在固定收官样例上验证一层保守压缩：
+  - `getExactSacrificeBucketKey()` 现忽略几何方向 `h / v`
+  - `exact_root_sacrifice_choice` 的 exact 根节点从 `20` 降到 `16`
+  - `ring4_sacrifice_choice` 的 exact 根节点从 `10` 降到 `8`
+  - `node ts_cases.js` 当前约 `21.4s`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前约 `31.7s`
 - 旧的 `seed=8` 固定输局已在本轮翻成赢局，但这并不代表 exact 内部候选已经完整；整局里仍会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩，并重新扫描新的稳定输局样本
 - 更大样本 benchmark 依然不适合直接放大
 - 后续如果要继续提胜率，必须同时优化：

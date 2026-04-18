@@ -835,9 +835,12 @@ TreeSearchAI.prototype.getExactSacrificeBucketKey = function(analysis){
     if(!analysis || !analysis.state)return null
     var next=analysis.state
     var stats=analysis.afterStats||next.getRegionStats()
+    var geometryParts=(analysis.geometryKey||'').split('|')
     return [
         analysis.categoryKey,
-        analysis.geometryKey,
+        geometryParts[1]||'',
+        geometryParts[2]||'',
+        geometryParts[3]||'',
         next.edgeCount[next.EDGE_NOW],
         next.edgeCount[next.EDGE_NOT],
         next.edgeCount[next.EDGE_WILL],
