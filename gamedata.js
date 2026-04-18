@@ -612,6 +612,7 @@ GameData.prototype.getAllEdgesFromRegion=function(region){
     // not check here for effectiveness
     var gameData=this
     if(!region || !region.block || !region.block.length)return []
+    var way=[]
     var len = region.block.length
     var stack = region.block
     var p1=0
@@ -622,10 +623,9 @@ GameData.prototype.getAllEdgesFromRegion=function(region){
         pend=0
         pd=-1
     }
-    var way=[]
-    for(var p=p1;p!=pend;p+=pd){
-        var q=p+pd
-        way.push({'x':(stack[p].x+stack[q].x)/2,'y':(stack[p].y+stack[q].y)/2})
+    for(var pp=p1;pp!=pend;pp+=pd){
+        var qq=pp+pd
+        way.push({'x':(stack[pp].x+stack[qq].x)/2,'y':(stack[pp].y+stack[qq].y)/2})
     }
     if(!region.isRing){
         var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
@@ -638,7 +638,46 @@ GameData.prototype.getAllEdgesFromRegion=function(region){
             }
         }
     }
-    return way;
+    if(way.length){
+        var probe=gameData.clone()
+        var valid=true
+        for(var jj=0,edge;edge=way[jj];jj++){
+            if(probe.xy(edge.x,edge.y)!==probe.EDGE_NOW){
+                valid=false
+                break
+            }
+            probe.putxy(edge.x,edge.y)
+        }
+        if(valid)return way
+        if(region.block.length>2)return way
+    }
+
+    var current=gameData.clone()
+    var remain={}
+    for(var kk=0,pt;pt=region.block[kk];kk++){
+        remain[[pt.x,pt.y].join(',')]=true
+    }
+    way=[]
+    var guard=region.block.length
+    while(guard>0 && current.playerId===gameData.playerId && current.edgeCount[current.EDGE_NOW]){
+        guard--
+        var scoreRegions=current.getScoreRegions()
+        var currentRegion=null
+        for(var ll=0,item;item=scoreRegions[ll];ll++){
+            for(var mm=0,cell;cell=item.block[mm];mm++){
+                if(!remain[[cell.x,cell.y].join(',')])continue
+                currentRegion=item
+                break
+            }
+            if(currentRegion)break
+        }
+        if(!currentRegion)break
+        var nextEdge=current.getOneEdgeFromRegion(currentRegion)
+        if(!nextEdge || current.xy(nextEdge.x,nextEdge.y)!==current.EDGE_NOW)return []
+        way.push({'x':nextEdge.x,'y':nextEdge.y})
+        current.putxy(nextEdge.x,nextEdge.y)
+    }
+    return way
 }
 GameData.prototype.getAllEdgesFromRegionIndex=function(regionIndex){
     // this region must be in score region
