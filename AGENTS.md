@@ -172,7 +172,10 @@ node aivsai.js -1 ts -2 ok -n 5 -s
     - `L2` 只保留中间口
     - simple region 若命中 `ok` 赢线首手，则保留该首手
     - 同一样例当前已降到 `4` 条 exact root route，整点 exact 约 `4.5s`
-  - 但这还只是子分支样例；旧 replay 还没有按新代码完整重扫，所以 `ply=39` 是否仍是头号热点还需要重新确认
+  - post-commit 已按“旧 replay + 当前代码 + 每个状态独立 new TreeSearchAI”重扫 `EDGE_NOT<=5`：
+    - `ply=39` 仍是头号慢点，但约 `1.8s`
+    - `ply=40~43` 当前约 `1.1s ~ 1.7s`
+    - 说明旧 replay 的 late exact 爆点已经被明显压平，下一步需要转去抓当前代码实际走出的新整局热点，而不是继续深挖同一类 `0safe` 根
   - 本轮已先在固定收官样例上验证两层压缩：
   - `getExactSacrificeBucketKey()` 现忽略几何方向 `h / v`
   - `exact_root_sacrifice_choice` 的 exact 根节点从 `20` 降到 `16`
@@ -194,6 +197,10 @@ node aivsai.js -1 ts -2 ok -n 5 -s
     - `ply=40~43` 已降到约 `4.2s ~ 4.4s`
     - 说明 `ok rollout` 排序提示进一步压下了旧 `ply=43` 热点，但 `ply=39` 还没有被真正解决
   - 整局 `seed=7` 仍未重新完整复测，说明热点定位还要继续
+  - 下一轮的 profiling 入口应改成“当前版本新录像”而不是旧 replay：
+    - 先生成新的 `seed=7` 录像
+    - 再按 `EDGE_NOT<=5` 重扫实际对局路径
+    - 确认新的慢点是否已经上移到更早的 `safe` / `score+safe` 过渡段
 - 旧的 `seed=8` 固定输局已在本轮翻成赢局，但这并不代表 exact 内部候选已经完整；整局里仍会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩，并重新扫描新的稳定输局样本
 - 更大样本 benchmark 依然不适合直接放大
 - 后续如果要继续提胜率，必须同时优化：

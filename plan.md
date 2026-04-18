@@ -69,12 +69,11 @@
     - 先固定使用 `--seed` 做输局复现，当前保留：
       - `seed=1 / 4 / 8 / 123` 作为当前版本已重跑的可赢样本
       - `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 作为当前版本的整轮性能样本
-      - `seed=7` 的 `ply=39 -> 0/0/42` 作为当前版本更核心的 exact 慢局样本
-      - `8733ee9` 之后整局 `seed=7` 在约 `2m24s` 仍未自然结束，下一轮不要再盲等整局，要直接带 profiling 重扫新热点
-      - 已按“旧 replay + 当前代码”重扫 `EDGE_NOT<=5`：
-        - `ply=39` 仍是头号慢点，约 `27.6s`
-        - `ply=40~43` 已降到约 `6.5s ~ 6.8s`
-        - 说明当前提交确实压下了旧 `ply=43` 热点，但主瓶颈还留在 `ply=39`
+      - `seed=7` 的旧 replay 仍保留为 late exact 对照样本，但已经不再是“几十秒级”主热点
+      - post-commit 已按“旧 replay + 当前代码 + 每个状态独立 new TreeSearchAI”重扫 `EDGE_NOT<=5`：
+        - `ply=39` 仍是头号慢点，但约 `1.8s`
+        - `ply=40~43` 当前约 `1.1s ~ 1.7s`
+        - 说明 simple-region canonical 已把旧 replay 的 late exact 爆点大幅压平，下一轮不要再把 `0/0/42` 当作唯一主瓶颈
     - 继续围绕 `ts_cases.js` 扩固定局面集，优先补：
       - 边界链与内部链混合（边界链 + ring 已补一例）
       - “一个区域有多种分割方式”的方向性断言
@@ -108,9 +107,9 @@
         - 只对 simple chain/ring 区域合并 opening，不对有分叉的大区域做“一整个 region 算一支”
         - `L3` 仍不合并；`L2` 只保留中间口；simple region 若命中 `ok` 赢线首手，则优先保留该 opening
         - 这层改动已补进 `ts_cases.js`，包括新回归 `exact_sacrifice_simple_region_canonicalization`
-      - 下一步不是继续补新的摘要状态，而是回到 `seed=7 / ply=39` 复核这层 simple-region canonical 的整局收益：
-        - 下一轮优先按旧 replay 重新重扫 `EDGE_NOT<=5`，确认 `ply=39` 是否仍是头号慢点
-        - 如果 `0/0/42` 根已经不再是主瓶颈，就继续拆前面的 `0/5/40 -> 0/2/42`，而不是重复优化更深的 pure sacrifice 根
+      - 下一步不是继续补新的摘要状态，而是把 profiling 入口从“旧 replay 的 0safe 根”切到“当前代码实际走出的新整局热点”：
+        - 旧 replay 的 `ply=39 -> 0/0/42` 已被压到秒级，不再值得继续深挖同一类 pure sacrifice 根
+        - 下一轮优先生成新的当前版本 `seed=7` 录像，按 `EDGE_NOT<=5` 重扫实际对局路径，确认新的慢点是否已经上移到更早的 `safe` / `score+safe` 过渡段
         - beneficiary ordering 仍先保持在当前窄接范围，不继续外扩到 `evaluateStructure()` hot path
         - 另外，当前 `estimateOpportunityOutcomeValue()` 对经典 handoff 的 `allow / block` 两个 outcome 仍都会给出正分，不能直接拿“纯静态替 exact”来接这层信号
     - 优先补状态抽象缺口，而不是先调一般权重：
