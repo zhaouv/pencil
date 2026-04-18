@@ -441,3 +441,240 @@ OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
 
     return eatOne;
 }
+
+////////////////// RolloutAI //////////////////
+RolloutAI=function(){
+    OffensiveKeeperAI.call(this)
+    return this
+}
+RolloutAI.prototype = Object.create(OffensiveKeeperAI.prototype)
+RolloutAI.prototype.constructor = RolloutAI
+
+RolloutAI.prototype.MAX_SAFE_SIM=15
+
+RolloutAI.prototype.where = function(){
+    var gameData = this.gameData
+
+    // 收官判定点：比较全吃和让分
+    if(gameData.edgeCount[gameData.EDGE_NOW]>0 && gameData.edgeCount[gameData.EDGE_NOT]===0){
+        if(this.isDecisionPoint(gameData)){
+            var region = gameData.connectedRegion[gameData.scoreRegion[0]]
+            if(region){
+                var eatResult = this.simulateBranch(gameData,'eat',region)
+                var yieldResult = this.simulateBranch(gameData,'yield',region)
+                if(yieldResult>eatResult){
+                    var yieldEdge = this.pickYieldEdge(gameData,region)
+                    if(yieldEdge)return yieldEdge
+                }
+            }
+        }
+        return OffensiveKeeperAI.prototype.where.call(this)
+    }
+
+    // 安全步：对候选安全边做 rollout
+    if(gameData.edgeCount[gameData.EDGE_NOW]===0 && gameData.edgeCount[gameData.EDGE_NOT]>0){
+        return this.pickBestSafeMove(gameData)
+    }
+
+    // 有分且还有安全边时，保持 OK 的吃法
+    if(gameData.edgeCount[gameData.EDGE_NOW]>0){
+        return this.getRandWhere(gameData.EDGE_NOW)
+    }
+
+    // 必须让分时，让最小闭区域
+    return gameData.getOneEdgeFromRegion(gameData.getMinConnectedRegion())
+}
+
+RolloutAI.prototype.simulateBranch = function(gameData,branchType,region){
+    var sim = gameData.clone()
+    var myId = this.playerId
+
+    if(branchType==='eat'){
+        var eatEdge = sim.getOneEdgeFromRegion(sim.connectedRegion[region.index] || region)
+        if(!eatEdge)return -Infinity
+        sim.putxy(eatEdge.x,eatEdge.y)
+        while(sim.edgeCount[sim.EDGE_NOW]>0 && sim.winnerId==null){
+            var edge = this.pickEatableEdge(sim)
+            if(!edge)break
+            sim.putxy(edge.x,edge.y)
+        }
+    } else {
+        var simRegion = sim.connectedRegion[region.index] || region
+        var yieldEdge = this.pickYieldEdge(sim,simRegion)
+        if(!yieldEdge)return -Infinity
+        sim.putxy(yieldEdge.x,yieldEdge.y)
+    }
+
+    this.simulateToEnd(sim)
+    return sim.player[myId].score - sim.player[1-myId].score
+}
+
+RolloutAI.prototype.simulateToEnd = function(sim){
+    var maxSteps = 200
+    while(sim.winnerId==null && maxSteps-->0){
+        var okAi = new OffensiveKeeperAI()
+        okAi.playerId = sim.playerId
+        okAi.gameData = sim
+        try{
+            var where = OffensiveKeeperAI.prototype.where.call(okAi)
+        }catch(e){
+            if(sim.edgeCount[sim.EDGE_NOW]>0){
+                var edges = sim.getAllEdges(sim.EDGE_NOW)
+                if(edges.length>0){
+                    sim.putxy(edges[0].x,edges[0].y)
+                    continue
+                }
+            }
+            break
+        }
+        if(!where || where.x==null)break
+        sim.putxy(where.x,where.y)
+    }
+}
+
+RolloutAI.prototype.pickBestSafeMove = function(gameData){
+    var edges = gameData.getAllEdges(gameData.EDGE_NOT)
+    if(edges.length===0)return null
+    if(edges.length===1)return edges[0]
+
+    var myId = this.playerId
+    var best = null
+    var bestScore = -Infinity
+    var candidates = edges.slice()
+
+    if(candidates.length>this.MAX_SAFE_SIM){
+        for(var i=candidates.length-1;i>0;i--){
+            var j = ~~(Math.random()*(i+1))
+            var tmp = candidates[i]
+            candidates[i] = candidates[j]
+            candidates[j] = tmp
+        }
+        candidates = candidates.slice(0,this.MAX_SAFE_SIM)
+    }
+
+    for(var ii=0;ii<candidates.length;ii++){
+        var sim = gameData.clone()
+        var candidate = candidates[ii]
+        sim.putxy(candidate.x,candidate.y)
+        if(sim.winnerId!=null){
+            var terminalScore = sim.player[myId].score - sim.player[1-myId].score
+            if(terminalScore>bestScore){
+                bestScore = terminalScore
+                best = candidate
+            }
+            continue
+        }
+        while(sim.edgeCount[sim.EDGE_NOW]>0 && sim.winnerId==null){
+            var okAi = new OffensiveKeeperAI()
+            okAi.playerId = sim.playerId
+            okAi.gameData = sim
+            try{
+                var where = OffensiveKeeperAI.prototype.where.call(okAi)
+            }catch(e){
+                var eList = sim.getAllEdges(sim.EDGE_NOW)
+                if(eList.length>0){
+                    sim.putxy(eList[0].x,eList[0].y)
+                    continue
+                }
+                break
+            }
+            if(!where || where.x==null)break
+            sim.putxy(where.x,where.y)
+        }
+        this.simulateToEnd(sim)
+        var score = sim.player[myId].score - sim.player[1-myId].score
+        if(score>bestScore){
+            bestScore = score
+            best = candidate
+        }
+    }
+
+    return best || edges[0]
+}
+
+RolloutAI.prototype.isDecisionPoint = function(gameData){
+    if(gameData.edgeCount[gameData.EDGE_NOW]===0)return false
+    if(gameData.edgeCount[gameData.EDGE_NOT]>0)return false
+    if(gameData.regionNum<=1)return false
+    if(gameData.scoreRegion.length!==1)return false
+
+    var region = gameData.connectedRegion[gameData.scoreRegion[0]]
+    if(!region || !region.block)return false
+
+    if(!region.isRing && region.block.length===2)return true
+    if(region.isRing && region.block.length===4)return true
+
+    return false
+}
+
+RolloutAI.prototype.safeGetEdgeFromScoreRegion = function(gameData){
+    for(var ii=0;ii<gameData.scoreRegion.length;ii++){
+        var region = gameData.connectedRegion[gameData.scoreRegion[ii]]
+        if(region)return gameData.getOneEdgeFromRegion(region)
+    }
+    var edges = gameData.getAllEdges(gameData.EDGE_NOW)
+    if(edges.length>0)return edges[0]
+    return null
+}
+
+RolloutAI.prototype.pickEatableEdge = function(gameData){
+    if(gameData.regionNum<=1){
+        return this.safeGetEdgeFromScoreRegion(gameData)
+    }
+    var regions = {}
+    for(var ii in gameData.connectedRegion){
+        var region = gameData.connectedRegion[ii]
+        if(!region)continue
+        var len = region.block.length
+        regions[len] = regions[len] || []
+        regions[len].push(region.index)
+    }
+    if(regions[1]){
+        for(var jj=0;jj<regions[1].length;jj++){
+            if(gameData.scoreRegion.indexOf(regions[1][jj])!==-1){
+                return gameData.getOneEdgeFromRegionIndex(regions[1][jj])
+            }
+        }
+    }
+    if(regions[2] && gameData.scoreRegion.length>1){
+        for(var kk=0;kk<regions[2].length;kk++){
+            if(gameData.scoreRegion.indexOf(regions[2][kk])!==-1){
+                return gameData.getOneEdgeFromRegionIndex(regions[2][kk])
+            }
+        }
+    }
+    if(gameData.scoreRegion.length>2){
+        for(var mm=0;mm<gameData.scoreRegion.length;mm++){
+            var ringRegion = gameData.connectedRegion[gameData.scoreRegion[mm]]
+            if(ringRegion && ringRegion.isRing)return gameData.getOneEdgeFromRegion(ringRegion)
+        }
+        return this.safeGetEdgeFromScoreRegion(gameData)
+    }
+    if(gameData.scoreRegion.length===2){
+        var region2 = gameData.connectedRegion[gameData.scoreRegion[1]]
+        if(region2 && region2.isRing)return gameData.getOneEdgeFromRegion(region2)
+        return this.safeGetEdgeFromScoreRegion(gameData)
+    }
+    return this.safeGetEdgeFromScoreRegion(gameData)
+}
+
+RolloutAI.prototype.pickYieldEdge = function(gameData,region){
+    if(!region || !region.block)return null
+    var stack = region.block
+    if(region.isRing){
+        var mid = ~~(region.block.length/2)
+        return {x:(stack[mid-1].x+stack[mid].x)/2,y:(stack[mid-1].y+stack[mid].y)/2}
+    }
+    var p1 = gameData.xy(stack[0].x,stack[0].y)!==gameData.SCORE_3 ? 0 : region.block.length-1
+    var directions = [{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx = stack[p1].x+d.x
+        var yy = stack[p1].y+d.y
+        var xxx = stack[p1].x+2*d.x
+        var yyy = stack[p1].y+2*d.y
+        if(gameData.xy(xx,yy)!==gameData.EDGE_USED && gameData.xy(xxx,yyy)==='out range'){
+            return {x:xx,y:yy}
+        }
+    }
+    return null
+}

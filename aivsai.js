@@ -60,6 +60,7 @@ var Game = sandbox.Game
 var GameData = sandbox.GameData
 var GreedyRandomAI = sandbox.GreedyRandomAI
 var OffensiveKeeperAI = sandbox.OffensiveKeeperAI
+var RolloutAI = sandbox.RolloutAI
 var TreeSearchAI = sandbox.TreeSearchAI
 
 // ============ AI注册表 ============
@@ -67,6 +68,7 @@ var TreeSearchAI = sandbox.TreeSearchAI
 var AI_MAP = {
     gr: { cls: GreedyRandomAI, name: 'GreedyRandomAI', short: 'GR' },
     ok: { cls: OffensiveKeeperAI, name: 'OffensiveKeeperAI', short: 'OK' },
+    ro: { cls: RolloutAI, name: 'RolloutAI', short: 'RO' },
     ts: { cls: TreeSearchAI, name: 'TreeSearchAI', short: 'TS' },
 }
 
@@ -76,7 +78,7 @@ function printHelp() {
     console.log([
         '用法: node aivsai.js [options]',
         '',
-        'AI名称: gr(GreedyRandomAI) ok(OffensiveKeeperAI) ts(TreeSearchAI)',
+        'AI名称: gr(GreedyRandomAI) ok(OffensiveKeeperAI) ro(RolloutAI) ts(TreeSearchAI)',
         '',
         'Options:',
         '  -1, --ai1 <name>    先手AI (default: ok)',
