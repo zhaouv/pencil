@@ -367,6 +367,62 @@ var CASES = [
         },
     },
     {
+        name: 'score_then_small_chain_middle_route',
+        xsize: 6,
+        ysize: 6,
+        history: [
+            [6, 5, 0],
+            [1, 0, 1],
+            [6, 1, 0],
+            [5, 0, 1],
+            [8, 3, 0],
+            [3, 0, 1],
+            [9, 4, 0],
+            [9, 0, 1],
+            [3, 6, 0],
+            [3, 2, 1],
+            [12, 3, 0],
+            [11, 0, 1],
+            [8, 9, 0],
+            [11, 4, 1],
+            [7, 6, 0],
+            [7, 0, 1],
+            [2, 9, 0],
+            [10, 5, 1],
+            [5, 8, 0],
+            [0, 3, 1],
+            [4, 3, 0],
+            [1, 4, 1],
+            [4, 5, 0],
+            [0, 1, 1],
+            [4, 11, 0],
+            [0, 5, 1],
+            [12, 9, 0],
+            [10, 1, 1],
+            [8, 11, 0],
+            [6, 3, 1],
+            [9, 8, 0],
+            [10, 7, 1],
+            [3, 10, 0],
+            [6, 7, 1],
+            [1, 8, 0],
+            [2, 7, 1],
+            [6, 9, 0],
+            [6, 11, 1],
+            [10, 11, 0],
+            [11, 8, 1],
+            [12, 11, 0],
+            [0, 11, 1],
+            [2, 11, 0],
+        ],
+        expect: {
+            phase: 'endgame',
+            bestMove: [3, 12],
+            bestRouteMoves: [[3, 12], [11, 6]],
+            searchDepth: 3,
+        },
+    },
+    {
         name: 'exact_score_prefix_control_only',
         xsize: 6,
         ysize: 6,
@@ -718,6 +774,21 @@ for (var cc = 0; cc < CASES.length; cc++) {
                 caseDef.name + ' best move mismatch: ' +
                     [best.route.moves[0].x, best.route.moves[0].y].join(',')
             )
+        }
+        if (caseDef.expect.bestRouteMoves) {
+            assertCase(
+                best && best.route && best.route.moves &&
+                    best.route.moves.length >= caseDef.expect.bestRouteMoves.length,
+                caseDef.name + ' best route too short'
+            )
+            for (var mm = 0; mm < caseDef.expect.bestRouteMoves.length; mm++) {
+                assertCase(
+                    best.route.moves[mm].x === caseDef.expect.bestRouteMoves[mm][0] &&
+                        best.route.moves[mm].y === caseDef.expect.bestRouteMoves[mm][1],
+                    caseDef.name + ' best route mismatch at step ' + mm + ': ' +
+                        [best.route.moves[mm].x, best.route.moves[mm].y].join(',')
+                )
+            }
         }
 
         console.log(

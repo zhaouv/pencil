@@ -99,6 +99,7 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - 其中 `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
   - 其中 `late_safe_window_choice` 当前会固定选出 `12,3`
   - 其中 `small_chain_sacrifice_middle_preference` 当前会固定选出 `11,6`
+  - 其中 `score_then_small_chain_middle_route` 当前会固定生成 `3,12 -> 11,6`
 - `exact_score_prefix_control_only` 当前会固定保持：
   - 普通 score prefixes 为 `score-all / score-stop / score-control`
   - exact score prefixes 为 `score-all / score-control`
@@ -110,6 +111,7 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - 通过 `GameData.putxy()` 连续推进后，exact score prefixes 为 `score-all / score-control`
 - 已验证来自 `test_record.md` 的让分节点：
   - 在 `[2,11,0] -> [3,12,1]` 之后，当前 `TreeSearchAI` 会把 `L2` 的中间边 `[11,6]` 排到 `[12,5] / [9,12] / [10,9]` 之前
+  - 对应的完整两手路线也已固定：当前 `where()` 会缓存 `3,12 -> 11,6`，不再出现 `3,12 -> 9,12`
 - 已验证单局 spot check：
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `1:0`，平均步数 `78`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `1:0`，平均步数 `80`

@@ -444,7 +444,10 @@ TreeSearchAI.prototype.generateScoreRoutes = function(gameData){
                 prefix.moves.concat(ender.moves),
                 prefix.tag+'+'+ender.tag
             )
-            if(route)routes.push(route)
+            if(route){
+                route.order+=(ender.order||0)*8
+                routes.push(route)
+            }
         }
     }
     return this.collectRepresentativeRoutes(routes,this.SCORE_ROUTE_LIMIT)
@@ -793,7 +796,10 @@ TreeSearchAI.prototype.generateExactScoreRoutes = function(gameData){
                 prefix.moves.concat(ender.moves),
                 prefix.tag+'+'+ender.tag
             )
-            if(route)routes.push(route)
+            if(route){
+                route.order+=(ender.order||0)*8
+                routes.push(route)
+            }
         }
     }
     return this.collectRepresentativeRoutes(routes)
