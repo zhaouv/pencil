@@ -29,7 +29,7 @@
   - `TreeSearchAI` 的实验性搜索实现。
   - 当前版本使用 clone-based 回合级路线搜索、alpha-beta、迭代加深、TT、结构评估和无安全步精确收官求解。
   - 已能稳定生成“全吃 / 留最后一口 / 双格链让分 / 四环让分”这类基础路线，并带有“连续无关步快进”和收官延伸搜索骨架。
-  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错、一个根结点让分被普通候选上限截断、一个“小得分区存在 `EDGE_NOW` 但 score route 为空”的候选缺口，以及一个 live `scoreRegion` 漂移导致 exact score route 直接为空的查询缺口，但强度和性能仍未达标。
+  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错、一个根结点让分被普通候选上限截断、一个“小得分区存在 `EDGE_NOW` 但 score route 为空”的候选缺口、一个 live `scoreRegion` 漂移导致 exact score route 直接为空的查询缺口，以及“长链 / 长环只会在 `chain2 / ring4` 才生成 `score-control`”的枚举缺口，但强度和性能仍未达标。
 - `server.js`
   - `socket.io` 对战服务器，默认监听 `5050`。
   - 管理随机匹配、指定房间、观战和棋谱广播。
@@ -95,7 +95,7 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - `node aivsai.js -1 ts -2 ok -n 1`
 - 已验证 `ts_cases.js` 固定局面回归可通过：
   - `node ts_cases.js`
-  - 其中 `ring4_sacrifice_choice` 当前会固定选出 `1,12`
+  - 其中 `ring4_sacrifice_choice` 当前会固定选出 `2,1`
   - 其中 `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
 - `exact_score_prefix_control_only` 当前会固定保持：
   - 普通 score prefixes 为 `score-all / score-stop / score-control`
@@ -104,19 +104,25 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - 普通 score prefixes 为 `score-all / score-stop`
   - exact score prefixes 为 `score-all / score-stop`
 - `live_ring8_score_prefix` 当前会固定保持：
-  - 通过 `GameData.putxy()` 连续推进后，普通 / exact score prefixes 都为 `score-all / score-stop`
+  - 通过 `GameData.putxy()` 连续推进后，普通 score prefixes 为 `score-all / score-stop / score-control`
+  - 通过 `GameData.putxy()` 连续推进后，exact score prefixes 为 `score-all / score-control`
 - 已验证单局 spot check：
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `1:0`，平均步数 `69`
-  - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `0:1`，平均步数 `78`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 2` 为 `1:0`，平均步数 `70`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `1:0`，平均步数 `76`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 5` 为 `1:0`，平均步数 `74`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`，平均步数 `67`
   - `node aivsai.js -1 ts -2 gr -n 1 --seed 123` 为 `1:0`，平均步数 `67`
 - 已验证短样本基准：
   - 上一轮 2+2 自定义短样本基线为：
     - `ts vs ok` 为 `1:3`
     - `ts vs gr` 为 `2:2`
-  - 本轮又补了 `--seed`、无安全步精确收官直切 exact、`exact_root_sacrifice_choice` 回归，以及“根结点无安全步”直接走 exact 路线集，但尚未重跑同口径 2+2 样本
+  - 本轮又补了 `--seed`、无安全步精确收官直切 exact、`exact_root_sacrifice_choice` 回归、“根结点无安全步”直接走 exact 路线集、live `scoreRegion` 查询实时扫描，以及长链 / 长环 `score-control` prefix 补齐
+  - 已重跑同口径 2+2 自定义短样本：
+    - `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 为 `4:0`
+    - `node aivsai.js -1 ts -2 gr -n 2 -s --seed 123` 为 `4:0`
   - 当前观测到的单点最大 exact 分支有过 `43 -> 26` 的收缩，但最新整局 spot check 仍会遇到 `40` 路左右的 exact 状态
-  - 说明当前版本已经从“性能完全不够”推进到了“Phase 4 初版已接入，根结点 exact 关键点开始固定，但 exact 内部仍有缺口”的阶段
+  - 说明当前版本已经从“Phase 4 初版已接入”推进到“固定输局 seed 已被逐个翻正、短样本已翻到可赢，但 exact 内部仍有缺口且性能仍偏慢”的阶段
 - 未验证浏览器页面、网络对战、观战流程。
 - `package.json` 里的 `npm test` 不是测试套件，只是直接运行 `node server.js`，会常驻阻塞。
 
@@ -133,10 +139,11 @@ node aivsai.js -1 ts -2 ok -n 5 -s
 当前 `TreeSearchAI` 已经进入“回合级路线搜索 + 搜索核心优化 + Phase 4 结构评估初版”的下一阶段，但还没有达到计划里的目标：
 
 - 目标是对 `ok` 达到 `80%` 胜率
-- 上一轮 2+2 短样本基线仍明显不稳：
-  - 对 `ok` 为 `1:3`
-  - 对 `gr` 也为 `2:2`
-- 说明“候选单位升级”“搜索内核升级”和“评估显式化”都已开始，但“强度建模”还远没有完成
+- 虽然最新 2+2 自定义短样本已翻成：
+  - 对 `ok` 为 `4:0`
+  - 对 `gr` 也为 `4:0`
+- 但样本仍然过小，尚不能把当前版本视为已经达到长期稳定的 `80%` 目标
+- 说明“候选单位升级”“搜索内核升级”和“评估显式化”都已开始见效，但“强度建模”还没有经过更大样本验证
 
 ### 2. clone-based 搜索性能偏慢
 
@@ -145,8 +152,8 @@ node aivsai.js -1 ts -2 ok -n 5 -s
 - 现在最小样本 benchmark 可以较稳定完成
 - 但候选较多的收官局面仍会明显变慢
 - 本轮已补 exact TT，并把部分状态的最大 exact 分支从 `43` 压到 `26`
-- 本轮又补了根结点无安全步直切 exact 路线集和小得分区 score route 兜底，带 seed 的单局 spot check 仍需几十秒
-- 旧的 `seed=1` 固定输局已翻成赢局，但 `seed=2 / 4 / 5` 这类固定输局仍然存在，说明 exact 内部候选仍不完整，且整局里还会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩
+- 本轮又补了根结点无安全步直切 exact 路线集、小得分区 score route 兜底、live `scoreRegion` 实时扫描，以及长链 / 长环 `score-control` prefix，带 seed 的单局 spot check 仍需几十秒，慢样本会到 `1m29s` 到 `2m04s`
+- 旧的 `seed=1 / 2 / 4 / 5` 固定输局都已翻成赢局，但这并不代表 exact 内部候选已经完整；整局里仍会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩，并重新扫描新的稳定输局样本
 - 更大样本 benchmark 依然不适合直接放大
 - 后续如果要继续提胜率，必须同时优化：
   - 候选压缩

@@ -24,15 +24,17 @@
   - 上一轮在“回合级路线 + 搜索核心优化 + Phase 4 结构评估初版”上跑过的 2+2 自定义短样本基线为：
     - `ts vs ok` 为 `1:3`
     - `ts vs gr` 为 `2:2`
-  - 本轮又补了“`--seed` 可复现对局 + 无安全步精确收官直切 exact + 根结点无安全步直接走 exact 路线集 + `exact_root_sacrifice_choice` 固定回归 + 小得分区 score route 校验/动态兜底 + `boundary_chain_ring_score_prefix` 回归 + live `scoreRegion` 查询改走实时扫描 + `live_ring8_score_prefix` 回归”，但尚未重跑同口径 2+2 样本
+  - 本轮又补了“`--seed` 可复现对局 + 无安全步精确收官直切 exact + 根结点无安全步直接走 exact 路线集 + `exact_root_sacrifice_choice` 固定回归 + 小得分区 score route 校验/动态兜底 + `boundary_chain_ring_score_prefix` 回归 + live `scoreRegion` 查询改走实时扫描 + `live_ring8_score_prefix` 回归 + 长链 / 长环 `score-control` prefix 补齐”，并已重跑同口径 2+2 样本：
+    - `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 为 `4:0`
+    - `node aivsai.js -1 ts -2 gr -n 2 -s --seed 123` 为 `4:0`
 - 当前主要问题：
   - 对 `ok` 还远未达到 `80%`
   - 回合级路线骨架和搜索核心都已经落地，Phase 4 的显式特征和无安全步精确收官也已接入，但当前排序和评估还不足以支撑强度
-  - 当前短样本已经不再是一边倒崩盘，但对 `ok` / `gr` 仍都明显不稳
+  - 当前固定 seed spot check 和 2+2 自定义短样本都已翻正，但样本仍然太小，还不能据此认定对 `ok` / `gr` 已稳定占优
   - clone-based 搜索性能已较最早版本明显改善，但更大样本仍偏慢
   - 本轮已定位出 exact 爆炸主要来自 `score-all/stop + sacrifice` 组合，并补了 exact TT 与 exact score prefix 去重
   - 观测到的单点最大 exact 分支一度可从 `43` 压到 `26`，但最新 spot check 里仍会出现 `40` 路左右的精确状态
-  - 当前带 seed 的单局 spot check 仍需几十秒，但旧的 `seed=1` 固定输局已翻成赢局，说明小得分区 score route 缺口确实会影响后半盘
+  - 当前带 seed 的单局 spot check 仍需几十秒到 `2m` 左右；旧的 `seed=1 / 2 / 4 / 5` 固定输局都已翻成赢局，说明小得分区 score route、live `scoreRegion` 查询和长链 / 长环 `score-control` 缺口都会直接影响后半盘
   - 候选生成和评估函数仍然不够贴近 README 里的末盘理论
 - 当前 `ok` 的强度不低。实测 `node aivsai.js -1 ok -2 gr -n 20 -s` 的结果是 `88%` 胜率
 - README 已明确写出 `ok` 的一部分判断是“不够完善的分析”，理论上可以被稳定针对
@@ -51,14 +53,15 @@
 - 从 `Phase 4` 中段继续，不要回头重做“让 `ts` 能跑起来”或“把搜索核心搭起来”的工作
   - 优先项：
     - 先固定使用 `--seed` 做输局复现，当前保留：
-      - `seed=4` 作为 `ts` 对 `ok` 的稳定输局样本
-      - `seed=1 / 123` 作为当前可赢样本
+      - `seed=1 / 2 / 4 / 5 / 123` 作为当前已翻正的可赢样本
+      - 下一步重新扫描新的稳定输局样本，不再沿用旧的 `seed=4` 输局结论
     - 继续围绕 `ts_cases.js` 扩固定局面集，优先补：
       - 边界链与内部链混合（边界链 + ring 已补一例）
       - “一个区域有多种分割方式”的方向性断言
     - 继续修 exact 内部候选缺口，优先查：
-      - 长链 `control` / 留口路线是否枚举不全
       - 多得分区切换时的 exact prefix 是否漏分支
+      - 长链 / 长环 `control` 已补后，是否仍存在更复杂区域的 `leave-control` 断口
+      - 多个可得分区之间来回切换时，exact TT / prefix 去重是否仍会误并状态
   - 继续压缩“无安全步精确收官”的分支数量，优先针对 `score-all/stop + sacrifice` 组合继续降分支
   - 保留 `exact_score_prefix_control_only` 这类前缀回归，继续找“单得分区 + 无 control”的 exact 爆炸状态并补针对性压缩
   - 先分析 `ts` 当前输给 `ok` 的局面类型，确认是评估权重方向错、候选遗漏还是预算不够
@@ -199,7 +202,7 @@
 
 - 还没有把 README 中的所有核心概念都落成稳定接口
 - 候选生成目前仍偏“代表步 + 静态评估”，还不是路线级搜索
-- 当前能击败 `gr` 的短样本不稳定，还不能把本阶段视为完全完成
+- 最近 2+2 自定义短样本已能击败 `gr`，但样本仍小，还不能把本阶段视为完全完成
 
 ### 任务
 
@@ -295,7 +298,7 @@
 
 ### 剩余
 
-- 当前路线候选仍然偏噪声，`ts` 对 `gr` 和 `ok` 的短样本都不稳定
+- 当前路线候选仍然偏噪声；最近 `ts` 对 `gr` 和 `ok` 的短样本已翻正，但还没有经过更大样本证明稳定
 - “能改变先后手的结构”已经有了初版显式候选，但建模仍偏粗糙
 - 安全步和让分步目前仍主要靠统计特征排序，不够接近 README 的结构分析
 - 新增的“无关步快进”与 `EDGE_WILL` 分类都还没有被证明真的提升最终胜率
@@ -365,10 +368,10 @@
 - 搜索核心虽然已落地，但搜索深度和静态评估还没有形成稳定正反馈
 - 当前 node/time budget 只是参数入口，还没有找到合适默认值，也没接进 `aivsai.js`
 - 多得分区和复杂让分局面里，候选数量依然会把搜索拖慢
-- 最新 2+2 自定义短样本仍只有：
-  - `ts vs ok` 为 `1:3`
-  - `ts vs gr` 为 `2:2`
-- 说明 Phase 3 的“可用搜索框架”已经有了，但还没有达到本阶段胜率验收线
+- 最新 2+2 自定义短样本已翻成：
+  - `ts vs ok` 为 `4:0`
+  - `ts vs gr` 为 `4:0`
+- 说明 Phase 3 的“可用搜索框架”已经有了，且最近修补开始直接影响胜负，但性能与大样本稳定性仍未达到本阶段验收线
 
 ### 具体改动
 
@@ -442,6 +445,7 @@
   - 没有 `EDGE_NOT` 时，不再退回 rollout 或纯静态猜测
   - 当前版本已改为“结构指纹去重后再做精确收官搜索”，并修正了一个 ring4 让分选错的关键分支
   - exact score route 已开始在 `control` 存在时跳过同区域的 `stopBeforeLast`
+  - `score-control` 已从只覆盖 `chain2 / ring4` 扩到可沿长链 / 长环连续吃到最后控制位
   - exact 搜索缓存已升级为带 `exact / lower / upper` 的 TT，而不再只有精确值缓存
 - 已新增固定局面回归脚本 `ts_cases.js`，当前已覆盖：
   - `control_swing_layout`
@@ -456,25 +460,30 @@
 - 已验证：
   - `node ts_cases.js`
   - `node -e "require('./game.js'); require('./gamedata.js'); require('./player.js'); require('./treeSearch.js'); console.log('core ok')"`
-  - `ring4_sacrifice_choice` 当前会固定选出 `1,12`
+  - `ring4_sacrifice_choice` 当前会固定选出 `2,1`
   - `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `1:0`，平均步数 `69`
-  - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `0:1`，平均步数 `78`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 2` 为 `1:0`，平均步数 `70`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `1:0`，平均步数 `76`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 5` 为 `1:0`，平均步数 `74`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`，平均步数 `67`
   - `node aivsai.js -1 ts -2 gr -n 1 --seed 123` 为 `1:0`，平均步数 `67`
+  - `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 为 `4:0`
+  - `node aivsai.js -1 ts -2 gr -n 2 -s --seed 123` 为 `4:0`
   - `node aivsai.js -1 ok -2 gr -n 1 -s --seed 123` 可稳定复现 `OK 2胜 GR 0负 (100%)`
 
 ### 剩余
 
-- 当前特征和权重还没有形成稳定胜率优势：
-  - 上一轮 2+2 自定义短样本基线里，`ts vs ok` 为 `1:3`
-  - 上一轮 2+2 自定义短样本基线里，`ts vs gr` 为 `2:2`
+- 当前特征和权重已经能把最近 2+2 自定义短样本翻成：
+  - `ts vs ok` 为 `4:0`
+  - `ts vs gr` 为 `4:0`
+- 但样本仍然太小，还没有形成可宣称稳定的胜率优势
 - 固定局面样例还缺：
   - 边界链与内部链混合
   - 更强的“多种分割方式”方向性断言
 - 已有 `--seed` 支持，但还没有基于固定 seed 集的更大样本 benchmark
 - `controlSwing`、大区域归属和 transition 阶段的权重仍然偏经验值，需要结合输局继续校正
-- 当前无安全步精确收官虽然已补 exact TT、根结点 exact 路线直切、小得分区 score route 校验和额外固定回归，且部分状态可把最大 exact 分支从 `43` 压到 `26`，并把旧的 `seed=1` 固定输局翻成赢局，但 `seed=4` 这类固定输局仍表明 exact 内部候选不完整，最新整局 spot check 仍会遇到 `40` 路左右的 exact 状态，单局耗时也仍在几十秒量级
+- 当前无安全步精确收官虽然已补 exact TT、根结点 exact 路线直切、小得分区 score route 校验、live `scoreRegion` 实时扫描、长链 / 长环 `score-control`，且部分状态可把最大 exact 分支从 `43` 压到 `26`，并把旧的 `seed=1 / 2 / 4 / 5` 固定输局翻成赢局，但最新整局 spot check 仍会遇到 `40` 路左右的 exact 状态，单局耗时也仍在几十秒到 `2m` 量级，因此 exact 内部候选和分支压缩仍未完成
 
 ### 评估函数建议特征
 

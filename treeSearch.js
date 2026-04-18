@@ -599,11 +599,56 @@ TreeSearchAI.prototype.getScorePrefixMoves = function(gameData, region, type){
     }
 
     if(type==='control'){
-        var controlMove=this.getControlMoveFromRegion(gameData,region)
-        return controlMove?[controlMove]:null
+        return this.getControlPrefixMoves(gameData,region)
     }
 
     return fullRoute
+}
+
+TreeSearchAI.prototype.getControlPrefixMoves = function(gameData, region){
+    if(!region || !region.block || !region.block.length)return null
+    var targetRemain=region.isRing?4:2
+    if(region.block.length<targetRemain)return null
+
+    var current=gameData.clone()
+    var moves=[]
+    var remain={}
+    for(var ii=0,pt;pt=region.block[ii];ii++){
+        remain[[pt.x,pt.y].join(',')]=true
+    }
+
+    var guard=region.block.length*2
+    while(guard>0 && current.playerId===gameData.playerId && current.edgeCount[current.EDGE_NOW]){
+        guard--
+        var scoreRegions=current.getScoreRegions()
+        var currentRegion=null
+        var bestOverlap=0
+        for(var jj=0,candidate;candidate=scoreRegions[jj];jj++){
+            var overlap=0
+            for(var kk=0,cell;cell=candidate.block[kk];kk++){
+                if(remain[[cell.x,cell.y].join(',')])overlap++
+            }
+            if(!overlap)continue
+            if(overlap>bestOverlap){
+                bestOverlap=overlap
+                currentRegion=candidate
+            }
+        }
+        if(!currentRegion)return null
+
+        if(currentRegion.block.length<=targetRemain){
+            var controlMove=this.getControlMoveFromRegion(current,currentRegion)
+            if(!controlMove)return null
+            moves.push(controlMove)
+            return moves
+        }
+
+        var take=current.getOneEdgeFromRegion(currentRegion)
+        if(!take || current.xy(take.x,take.y)!==current.EDGE_NOW)return null
+        moves.push(take)
+        current.putxy(take.x,take.y)
+    }
+    return null
 }
 
 TreeSearchAI.prototype.getControlMoveFromRegion = function(gameData, region){

@@ -197,7 +197,7 @@ var CASES = [
         expect: {
             phase: 'endgame',
             largeClosedNum: 3,
-            bestMove: [1, 12],
+            bestMove: [2, 1],
         },
     },
     {
@@ -450,8 +450,8 @@ var CASES = [
         expect: {
             phase: 'endgame',
             minScoreEdges: 1,
-            normalPrefixTags: ['score-all', 'score-stop'],
-            exactPrefixTags: ['score-all', 'score-stop'],
+            normalPrefixTags: ['score-all', 'score-stop', 'score-control'],
+            exactPrefixTags: ['score-all', 'score-control'],
             exactRequired: true,
             exactSign: 'win',
         },
