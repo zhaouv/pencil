@@ -527,6 +527,61 @@ var CASES = [
         },
     },
     {
+        name: 'ok_endgame_rollout_ordering',
+        xsize: 6,
+        ysize: 6,
+        history: [
+            [1, 0, 0],
+            [2, 3, 1],
+            [0, 1, 0],
+            [12, 11, 1],
+            [0, 3, 0],
+            [3, 8, 1],
+            [4, 3, 0],
+            [1, 12, 1],
+            [3, 0, 0],
+            [11, 0, 1],
+            [10, 1, 0],
+            [2, 11, 1],
+            [5, 0, 0],
+            [12, 5, 1],
+            [7, 0, 0],
+            [8, 1, 1],
+            [8, 3, 0],
+            [10, 3, 1],
+            [0, 5, 0],
+            [11, 12, 1],
+            [4, 5, 0],
+            [7, 12, 1],
+            [12, 3, 0],
+            [5, 8, 1],
+            [6, 5, 0],
+            [12, 7, 1],
+            [5, 2, 0],
+            [0, 9, 1],
+            [1, 8, 0],
+            [6, 9, 1],
+            [3, 6, 0],
+            [4, 11, 1],
+            [0, 7, 0],
+            [9, 10, 1],
+            [5, 12, 0],
+            [8, 7, 1],
+            [9, 12, 0],
+            [10, 7, 1],
+            [7, 6, 0],
+            [7, 10, 1],
+            [10, 5, 0],
+            [10, 9, 1],
+            [12, 9, 0],
+        ],
+        expect: {
+            phase: 'endgame',
+            okHintMove: [7, 4],
+            exactFirstMove: [7, 4],
+        },
+    },
+    {
         name: 'small_chain_sacrifice_middle_preference',
         xsize: 6,
         ysize: 6,
@@ -915,12 +970,18 @@ for (var cc = 0; cc < CASES.length; cc++) {
         var best = null
         var normalPrefixes = null
         var exactPrefixes = null
+        var exactRoutes = null
+        var okHint = null
         if (!gd.edgeCount[gd.EDGE_NOT]) {
             exact = ai.solveExactEndgame(gd)
         }
         if (caseDef.expect.normalPrefixTags || caseDef.expect.exactPrefixTags) {
             normalPrefixes = ai.generateScorePrefixes(gd)
             exactPrefixes = ai.generateExactScorePrefixes(gd)
+        }
+        if (caseDef.expect.exactFirstMove || caseDef.expect.okHintMove) {
+            exactRoutes = ai.generateExactRoutes(gd)
+            okHint = ai.getOkEndgameRolloutHint(gd)
         }
         if (caseDef.expect.bestMove || caseDef.expect.bestMoveAny) {
             ai.transposition = {}
@@ -1112,6 +1173,30 @@ for (var cc = 0; cc < CASES.length; cc++) {
                     JSON.stringify(caseDef.expect.exactPrefixTags),
                 caseDef.name + ' exact prefix tags mismatch: ' +
                     JSON.stringify(exactPrefixes.map(function(prefix) { return prefix.tag }))
+            )
+        }
+        if (caseDef.expect.okHintMove) {
+            assertCase(
+                okHint && okHint.move,
+                caseDef.name + ' ok endgame hint missing'
+            )
+            assertCase(
+                okHint.move.x === caseDef.expect.okHintMove[0] &&
+                    okHint.move.y === caseDef.expect.okHintMove[1],
+                caseDef.name + ' ok hint move mismatch: ' +
+                    [okHint.move.x, okHint.move.y].join(',')
+            )
+        }
+        if (caseDef.expect.exactFirstMove) {
+            assertCase(
+                exactRoutes && exactRoutes.length,
+                caseDef.name + ' exact routes missing'
+            )
+            assertCase(
+                exactRoutes[0].moves[0].x === caseDef.expect.exactFirstMove[0] &&
+                    exactRoutes[0].moves[0].y === caseDef.expect.exactFirstMove[1],
+                caseDef.name + ' exact first move mismatch: ' +
+                    [exactRoutes[0].moves[0].x, exactRoutes[0].moves[0].y].join(',')
             )
         }
         if (caseDef.expect.bestMove) {

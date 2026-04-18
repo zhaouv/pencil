@@ -18,6 +18,7 @@ TreeSearchAI.prototype.SACRIFICE_ROUTE_LIMIT=6
 TreeSearchAI.prototype.SCORE_ROUTE_LIMIT=12
 TreeSearchAI.prototype.TURN_END_ROUTE_LIMIT=4
 TreeSearchAI.prototype.IRRELEVANT_SKIP_LIMIT=12
+TreeSearchAI.prototype.OK_ENDGAME_ROUTE_BONUS=2400
 TreeSearchAI.prototype.TIME_BUDGET_MS=0
 TreeSearchAI.prototype.NODE_BUDGET=0
 
@@ -855,10 +856,12 @@ TreeSearchAI.prototype.generateExactSacrificeRoutes = function(gameData){
     var analyses=gameData.getSacrificeEdgeAnalyses()
     var routes=[]
     var bucket={}
+    var okHint=this.getOkEndgameRolloutHint(gameData)
     for(var ii=0,analysis;analysis=analyses[ii];ii++){
         var route=this.makeRouteFromAnalysis(gameData,analysis,'sacrifice')
         if(route){
             route.order=this.getExactSacrificeRouteOrder(route,analysis)
+            route.order+=this.getExactSacrificeOkRouteBonus(gameData,route,okHint)
             routes.push(route)
         }
         var key=this.getExactSacrificeBucketKey(analysis)
@@ -874,6 +877,50 @@ TreeSearchAI.prototype.generateExactSacrificeRoutes = function(gameData){
     return this.collectRepresentativeRoutes(grouped)
 }
 
+TreeSearchAI.prototype.getOkEndgameRolloutHint = function(gameData){
+    this.okEndgameHintCache=this.okEndgameHintCache||{}
+    var key=gameData.getBoardKey()
+    if(Object.prototype.hasOwnProperty.call(this.okEndgameHintCache,key)){
+        return this.okEndgameHintCache[key]
+    }
+    if(gameData.edgeCount[gameData.EDGE_NOT]!==0){
+        this.okEndgameHintCache[key]=null
+        return null
+    }
+    var current=gameData.clone()
+    var rolloutAI=new OffensiveKeeperAI()
+    rolloutAI.gameData=current
+    rolloutAI.rand=function(){return 0}
+    var firstMove=null
+    var guard=Math.max(16,current.totalScore*4)
+    while(current.winnerId==null && guard>0){
+        var move=rolloutAI.where()
+        if(!this.isValidMove(move)){
+            firstMove=null
+            break
+        }
+        if(!firstMove){
+            firstMove={'x':move.x,'y':move.y}
+        }
+        current.putxy(move.x,move.y)
+        guard--
+    }
+    var hint=null
+    if(firstMove && current.winnerId!=null){
+        var diff=
+            current.player[gameData.playerId].score-
+            current.player[1-gameData.playerId].score
+        hint={
+            move:firstMove,
+            moveKey:[firstMove.x,firstMove.y].join(','),
+            currentPlayerWin:diff>0,
+            scoreDiff:diff,
+        }
+    }
+    this.okEndgameHintCache[key]=hint
+    return hint
+}
+
 TreeSearchAI.prototype.getExactSacrificeRouteOrder = function(route, analysis){
     if(!route)return -this.MAX_SCORE
     // Exact pure-sacrifice ordering should prefer the post-open structure itself;
@@ -883,6 +930,19 @@ TreeSearchAI.prototype.getExactSacrificeRouteOrder = function(route, analysis){
         return route.order-(analysis.orderBonus||0)
     }
     return route.order
+}
+
+TreeSearchAI.prototype.getExactSacrificeOkRouteBonus = function(gameData, route, okHint){
+    if(
+        !okHint ||
+        !okHint.currentPlayerWin ||
+        !route ||
+        !route.moves ||
+        !route.moves.length
+    )return 0
+    var move=route.moves[0]
+    if([move.x,move.y].join(',')!==okHint.moveKey)return 0
+    return (gameData.playerId===this.playerId?1:-1)*this.OK_ENDGAME_ROUTE_BONUS
 }
 
 TreeSearchAI.prototype.collectEdgeRoutes = function(gameData, edges, limit, tag){

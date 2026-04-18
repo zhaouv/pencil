@@ -95,11 +95,17 @@
         - 小链中间口回归 `small_chain_sacrifice_middle_preference` / `score_then_small_chain_middle_route` 仍保持通过
         - `seed=7` 的 `0/0/42` pure sacrifice 根现会把 `12,1 / 11,2` 提前到前排
         - 同一根状态上的 `solveLateEndgame()` 约从 `26.0s` 降到 `23.7s`
+      - 本轮又把 `ok` 的无安全边收官逻辑接成了 exact sacrifice 的排序提示：
+        - `safe=0` 的 `generateExactSacrificeRoutes()` 现在会先跑一遍确定性的 `OffensiveKeeperAI` rollout
+        - 只有当 rollout 结果对当前行动方是赢线时，才把 rollout 首手对应的 route 提到前面
+        - 这层只影响排序，不替代 exact，也不会把 `ok` rollout 当成胜负证明
+        - 已补 `ok_endgame_rollout_ordering` 固定回归，当前会固定把旧 `seed=7 / ply=43` 的首手排成 `7,4`
       - 本轮还验证过一条更激进的 `forced exact score-prefix canonical` 思路：
         - `12,1` 与 `11,2`、`3,12` 与 `3,10` 这类 sacrifice 根，确实会在唯一 exact score-prefix 之后汇合到同一局面
         - 但把这层 canonical 直接接进主线会让整体求解变慢，当前先不合并，后续若再做要先解决计算代价
       - 下一步不是重复补状态，而是继续验证这层 beneficiary ordering 是否值得扩大范围，并继续沿 `seed=7 / ply=39 -> 0/0/42` 这类慢局压 exact 根；它仍不适合直接塞进 `evaluateStructure()` 的 hot path
         - 下一轮优先直接生成新的 `seed=7` 录像并按 `EDGE_NOT<=5` 重扫各 ply 的 exact 耗时；在此之前，先沿旧 replay 里仍然最慢的 `ply=39` 继续做子分支 profiling
+        - 如果 `ply=39` 继续证明是主瓶颈，优先检查 `ok rollout` 提示是否需要加更便宜的 gate，而不是默认对所有 `safe=0` 根都启用
         - 另外，当前 `estimateOpportunityOutcomeValue()` 对经典 handoff 的 `allow / block` 两个 outcome 仍都会给出正分，不能直接拿“纯静态替 exact”来接这层信号
     - 优先补状态抽象缺口，而不是先调一般权重：
       - 本轮已给 `GameData` 增加第一版“结构机会区签名 / critical split zone”信息
@@ -562,8 +568,8 @@
   - `11,8 -> 6,11 -> 10,11 -> 12,11` 后现在已能显式表达“最后一个决定性结构机会的动作控制权和 outcome 受益方都归对手”
 - `late_safe_window_choice` 的代表边已从旧的 `12,3` 切到同指纹的 `11,12`，回归已放宽为等价代表边断言
 - 新 spot check：
-  - `time node ts_cases.js` 当前约 `19.3s`
-  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前为 `TS 1:0 OK`，平均步数 `67`，约 `26.7s`
+  - `time node ts_cases.js` 当前约 `22.3s`
+  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前为 `TS 1:0 OK`，平均步数 `67`，约 `25.3s`
 - 固定局面样例还缺：
   - 边界链与内部链混合
   - 更强的“最后一个决定性结构机会归属 / 交接”断言
@@ -577,17 +583,16 @@
 - 当前已抓到一个更具体的性能瓶颈样本：
   - `seed=7` 的旧热点 `ply=43` 当前实际是 `0/0/41` 的 pure sacrifice endgame
   - 该状态旧记录为 `20` 条 exact route、`solveLateEndgame()` 约 `36s`
-  - 当前版本已把它压到 `16` 条 exact route、单点约 `6.7s`
+  - 当前版本已把它压到 `16` 条 exact route、单点约 `4.3s`
   - 但热点已经前移到 `ply=39 -> 0/0/42` 这条路径，本轮进一步确认真正拖慢的是大链 sacrifice 根的排序
-  - 对应的 `0/0/42` pure sacrifice 根当前仍有 `10` 条 exact route，但 `12,1 / 11,2` 两条非负线已被提到前排，单点约从 `26.0s` 降到 `23.7s`
+  - 对应的 `0/0/42` pure sacrifice 根当前仍有 `10` 条 exact route，但 `12,1 / 11,2` 两条非负线已被提到前排，随后 `safe=0` 根还会优先尝试 `ok` rollout 的赢线首手
   - 已验证某些 root sacrifice 会在唯一 exact score-prefix 后汇合到同一后继，但直接 canonical 仍太贵，先记为下一步优化方向
   - 整局 `seed=7` 仍未重新完整复测，说明当前还不能把这次局部压缩等同于“整局已修完”
   - post-commit 复跑 `time node aivsai.js -1 ts -2 ok -n 1 --seed 7 -o /tmp/pencil_seed7_after8733ee9.json` 在约 `2m24s` 仍未自然结束，已手动停止；说明这次提交确实没把整局主热点清空
   - 但在“旧 replay + 当前代码”的重扫里，慢点分布已经变得更清楚：
-    - `ply=39` 约 `27.6s`，仍是当前第一热点
-    - `ply=40` 约 `6.8s`
-    - `ply=41` / `42` / `43` 约 `6.5s ~ 6.8s`
-    - 说明旧 `ply=43` 热点已被压下去，但 `ply=39` 还没有被真正解决
+    - `ply=39` 约 `30.4s`，仍是当前第一热点
+    - `ply=40` / `41` / `42` / `43` 约 `4.2s ~ 4.4s`
+    - 说明 `ok rollout` 排序提示进一步压低了旧 `ply=43` 热点，但 `ply=39` 还没有被真正解决
   - 已试过的简单 `generateExactSacrificeRoutes().slice(...)` 限流不可直接采用：
     - `top 8` 会把该状态从 `win` 剪成 `loss`
     - `top 12` 会把该状态从 `win` 剪成 `draw`
