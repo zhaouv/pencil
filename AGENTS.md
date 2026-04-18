@@ -179,6 +179,10 @@ node aivsai.js -1 ts -2 ok -n 5 -s
   - `seed=7` 的 `0/0/42` pure sacrifice 根现会把 `12,1 / 11,2` 提前到前排，单点约从 `26.0s` 降到 `23.7s`
   - 已验证 `12,1 / 11,2`、`3,12 / 3,10` 这类根 sacrifice 会在唯一 exact score-prefix 后汇合，但直接把这层 canonical 接进主线会让整体求解变慢，当前先不合并
   - post-commit 复跑 `time node aivsai.js -1 ts -2 ok -n 1 --seed 7 -o /tmp/pencil_seed7_after8733ee9.json` 在约 `2m24s` 仍未自然结束，已手动停止；说明整局层面还有后续慢点
+  - 已按“旧 replay + 当前代码”重扫 `EDGE_NOT<=5` 的所有 ply：
+    - `ply=39` 约 `27.6s`，仍是当前第一热点
+    - `ply=40~43` 已降到约 `6.5s ~ 6.8s`
+    - 说明这次提交确实压下了旧 `ply=43` 热点，但 `ply=39` 还没有被真正解决
   - 整局 `seed=7` 仍未重新完整复测，说明热点定位还要继续
 - 旧的 `seed=8` 固定输局已在本轮翻成赢局，但这并不代表 exact 内部候选已经完整；整局里仍会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩，并重新扫描新的稳定输局样本
 - 更大样本 benchmark 依然不适合直接放大

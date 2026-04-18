@@ -67,6 +67,10 @@
       - `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 作为当前版本的整轮性能样本
       - `seed=7` 的 `ply=39 -> 0/0/42` 作为当前版本更核心的 exact 慢局样本
       - `8733ee9` 之后整局 `seed=7` 在约 `2m24s` 仍未自然结束，下一轮不要再盲等整局，要直接带 profiling 重扫新热点
+      - 已按“旧 replay + 当前代码”重扫 `EDGE_NOT<=5`：
+        - `ply=39` 仍是头号慢点，约 `27.6s`
+        - `ply=40~43` 已降到约 `6.5s ~ 6.8s`
+        - 说明当前提交确实压下了旧 `ply=43` 热点，但主瓶颈还留在 `ply=39`
     - 继续围绕 `ts_cases.js` 扩固定局面集，优先补：
       - 边界链与内部链混合（边界链 + ring 已补一例）
       - “一个区域有多种分割方式”的方向性断言
@@ -95,7 +99,7 @@
         - `12,1` 与 `11,2`、`3,12` 与 `3,10` 这类 sacrifice 根，确实会在唯一 exact score-prefix 之后汇合到同一局面
         - 但把这层 canonical 直接接进主线会让整体求解变慢，当前先不合并，后续若再做要先解决计算代价
       - 下一步不是重复补状态，而是继续验证这层 beneficiary ordering 是否值得扩大范围，并继续沿 `seed=7 / ply=39 -> 0/0/42` 这类慢局压 exact 根；它仍不适合直接塞进 `evaluateStructure()` 的 hot path
-        - 下一轮优先直接生成新的 `seed=7` 录像并按 `EDGE_NOT<=5` 重扫各 ply 的 exact 耗时，不再只看旧 replay 或盲等整局结束
+        - 下一轮优先直接生成新的 `seed=7` 录像并按 `EDGE_NOT<=5` 重扫各 ply 的 exact 耗时；在此之前，先沿旧 replay 里仍然最慢的 `ply=39` 继续做子分支 profiling
         - 另外，当前 `estimateOpportunityOutcomeValue()` 对经典 handoff 的 `allow / block` 两个 outcome 仍都会给出正分，不能直接拿“纯静态替 exact”来接这层信号
     - 优先补状态抽象缺口，而不是先调一般权重：
       - 本轮已给 `GameData` 增加第一版“结构机会区签名 / critical split zone”信息
@@ -579,6 +583,11 @@
   - 已验证某些 root sacrifice 会在唯一 exact score-prefix 后汇合到同一后继，但直接 canonical 仍太贵，先记为下一步优化方向
   - 整局 `seed=7` 仍未重新完整复测，说明当前还不能把这次局部压缩等同于“整局已修完”
   - post-commit 复跑 `time node aivsai.js -1 ts -2 ok -n 1 --seed 7 -o /tmp/pencil_seed7_after8733ee9.json` 在约 `2m24s` 仍未自然结束，已手动停止；说明这次提交确实没把整局主热点清空
+  - 但在“旧 replay + 当前代码”的重扫里，慢点分布已经变得更清楚：
+    - `ply=39` 约 `27.6s`，仍是当前第一热点
+    - `ply=40` 约 `6.8s`
+    - `ply=41` / `42` / `43` 约 `6.5s ~ 6.8s`
+    - 说明旧 `ply=43` 热点已被压下去，但 `ply=39` 还没有被真正解决
   - 已试过的简单 `generateExactSacrificeRoutes().slice(...)` 限流不可直接采用：
     - `top 8` 会把该状态从 `win` 剪成 `loss`
     - `top 12` 会把该状态从 `win` 剪成 `draw`
