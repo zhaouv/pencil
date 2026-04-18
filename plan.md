@@ -52,8 +52,21 @@
     - 固定样例 `exact_sacrifice_simple_region_canonicalization` 当前会体现这条“仅 `L2` 取中间、其它 simple 闭区域保留首个代表”的规则
     - 同一固定 `0/0/42` 根当前为 `14` 个闭区域代表 opening，进一步按后继 fingerprint 压成 `4` 条 exact root route
   - 候选生成和评估函数仍然不够贴近 README 里的末盘理论
+  - 当前 benchmark 还暴露出两个新的明确问题：
+    - 对 `ok` 的大样本结果仍是 `78%`，还没过计划里的 `80%`
+    - 存在一个真实运行时异常：`Cannot read properties of null (reading 'block')`
 - 当前 `ok` 的强度不低。实测 `node aivsai.js -1 ok -2 gr -n 20 -s` 的结果是 `88%` 胜率
 - README 已明确写出 `ok` 的一部分判断是“不够完善的分析”，理论上可以被稳定针对
+- 最新大一点的 benchmark 已补：
+  - `node aivsai.js -1 ts -2 ok -n 20 -s -o replay_ts_vs_ok.html` 当前为 `31:9 (78%)`
+    - `TS` 先手 `18:2`
+    - `TS` 后手 `13:7`
+    - 第 `16` 局出现一次运行时异常：`Cannot read properties of null (reading 'block') playerId:0`
+    - 该异常局最终仍赢下，不计入输局
+  - `node aivsai.js -1 ts -2 gr -n 20 -s -o replay_ts_vs_gr.html` 当前为 `38:2 (95%)`
+    - `TS` 先手 `20:0`
+    - `TS` 后手 `18:2`
+  - 已从录像提取出 `11` 个负局和 `1` 个报错局，追加到 `test_record.md` 末尾，当前可以直接围绕这些固定录像做人工复盘
 
 ## 执行进度
 
@@ -82,6 +95,15 @@
         - `seed=7` 在 `20s` 超时下，`--trace-safe-max 12` 仍写出 `0` 条 trace
         - `seed=7` 在 `20s` 超时下，`--trace-safe-max 20` 只写出 `2` 条 trace，当前只推进到 `ply=34/35`、`safe=20/18`
         - 说明当前版本的新热点已经早于旧 late window
+      - 本轮又补了 `20+20` 交换先后手 benchmark：
+        - 对 `ok` 为 `31:9 (78%)`
+        - 对 `gr` 为 `38:2 (95%)`
+        - 明显的弱项集中在 `TS` 后手：
+          - 对 `ok`：先手 `18:2`，后手 `13:7`
+          - 对 `gr`：先手 `20:0`，后手 `18:2`
+        - 已把 `11` 个负局和 `1` 个报错局追加到 `test_record.md`
+        - 下一轮优先直接围绕这些录像做复盘，不再只盯旧 `seed=7` replay
+        - 先确认第 `16` 局异常是哪里的 `connectedRegion[index]` 变成了 `null`
     - 继续围绕 `ts_cases.js` 扩固定局面集，优先补：
       - 边界链与内部链混合（边界链 + ring 已补一例）
       - “一个区域有多种分割方式”的方向性断言
