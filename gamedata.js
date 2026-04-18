@@ -166,6 +166,7 @@ GameData.prototype.clearTransientCache=function(){
     this.__sacrificeEdgeAnalyses=null
     this.__irrelevantEdges=null
     this.__controlSwingStructures=null
+    this.__structureOpportunitySummary=null
     this.__boardKey=null
 }
 GameData.prototype.clone=function(){
@@ -956,6 +957,11 @@ GameData.prototype.getEvalFeatures=function(){
         activeRingScoreRegionNum:0,
         activeBoundaryScoreRegionNum:0,
         activeMaxScoreRegionSize:0,
+        structureOpportunityZoneNum:0,
+        splitOpportunityZoneNum:0,
+        criticalSplitZoneNum:0,
+        lastCriticalSplitZone:0,
+        structureOpportunitySignature:'none',
     }
 
     for(var ii=0,region;region=closedRegions[ii];ii++){
@@ -1011,13 +1017,20 @@ GameData.prototype.getEvalFeatures=function(){
         safeEdgeCount &&
         (
             gameData.__safeEdgeAnalyses ||
-            safeEdgeCount<=12 ||
-            stats.closedNum>=2
+            safeEdgeCount<=12
         )
     ){
         var analyses=gameData.getSafeEdgeAnalyses()
         features.irrelevantEdgeCount=gameData.getIrrelevantEdges(analyses).length
         features.controlSwingCount=gameData.getControlSwingStructures(analyses).length
+        if(safeEdgeCount<=12){
+            var opportunity=gameData.getStructureOpportunitySummary(analyses)
+            features.structureOpportunityZoneNum=opportunity.zoneNum
+            features.splitOpportunityZoneNum=opportunity.splitZoneNum
+            features.criticalSplitZoneNum=opportunity.criticalSplitZoneNum
+            features.lastCriticalSplitZone=opportunity.criticalSplitZoneNum===1?1:0
+            features.structureOpportunitySignature=opportunity.signature
+        }
     }
     features.controlZeroParitySignal=
         features.controlSwingCount===0?features.safeSmallParitySignal:0
@@ -1057,7 +1070,8 @@ GameData.prototype.getStructureFingerprint=function(stats){
     return key
 }
 GameData.prototype.getControlFingerprint=function(stats){
-    if(!stats && this.__controlFingerprint)return this.__controlFingerprint
+    var rawOnly=arguments[1]===true
+    if(!stats && !rawOnly && this.__controlFingerprint)return this.__controlFingerprint
     stats=stats||this.getRegionStats()
     var key=[
         stats.smallClosedNum,
@@ -1070,15 +1084,134 @@ GameData.prototype.getControlFingerprint=function(stats){
         stats.maxRegionSize,
         this.isEndgamePhase()?1:0,
     ].join('|')
-    if(!stats || stats===this.__regionStats)this.__controlFingerprint=key
+    if(!rawOnly && this.countSafeEdges()<=12){
+        key+='|'+this.getStructureOpportunityFingerprint()
+    }
+    if(!rawOnly && (!stats || stats===this.__regionStats))this.__controlFingerprint=key
     return key
+}
+GameData.prototype.getEdgePointKeys=function(edge){
+    if(!edge)return []
+    if(edge.x%2===0){
+        return [
+            [edge.x,edge.y-1].join(','),
+            [edge.x,edge.y+1].join(','),
+        ]
+    }
+    return [
+        [edge.x-1,edge.y].join(','),
+        [edge.x+1,edge.y].join(','),
+    ]
+}
+GameData.prototype.getStructureOpportunitySummary=function(analyses){
+    if(!analyses && this.__structureOpportunitySummary)return this.__structureOpportunitySummary
+    analyses=analyses||this.getSafeEdgeAnalyses()
+    var summary={
+        zoneNum:0,
+        splitZoneNum:0,
+        criticalSplitZoneNum:0,
+        signature:'none',
+    }
+    if(!analyses.length){
+        if(!arguments.length || analyses===this.__safeEdgeAnalyses){
+            this.__structureOpportunitySummary=summary
+        }
+        return summary
+    }
+
+    var pointKeys=[]
+    for(var ii=0,item;item=analyses[ii];ii++){
+        pointKeys[ii]=this.getEdgePointKeys(item.edge)
+    }
+
+    var visited={}
+    var zoneKeys=[]
+    for(var start=0;start<analyses.length;start++){
+        if(visited[start])continue;
+        var queue=[start]
+        var zone=[]
+        visited[start]=true
+        while(queue.length){
+            var idx=queue.shift()
+            zone.push(analyses[idx])
+            var points=pointKeys[idx]
+            for(var jj=0;jj<analyses.length;jj++){
+                if(visited[jj])continue;
+                var otherPoints=pointKeys[jj]
+                if(
+                    points[0]===otherPoints[0] ||
+                    points[0]===otherPoints[1] ||
+                    points[1]===otherPoints[0] ||
+                    points[1]===otherPoints[1]
+                ){
+                    visited[jj]=true
+                    queue.push(jj)
+                }
+            }
+        }
+
+        summary.zoneNum++
+        var fineOutcomes={}
+        var criticalOutcomes={}
+        var geometryOutcomes={}
+        for(var kk=0,zoneItem;zoneItem=zone[kk];kk++){
+            var fineKey=[
+                zoneItem.structureKey,
+                zoneItem.afterStats.smallClosedNum,
+                zoneItem.afterStats.largeClosedNum,
+                zoneItem.afterStats.largeRingNum,
+                zoneItem.afterStats.largeNonRingNum,
+                zoneItem.afterStats.boundaryLargeClosedNum,
+                zoneItem.afterStats.innerLargeClosedNum,
+                zoneItem.afterStats.maxClosedSize,
+                zoneItem.state.countSafeEdges(),
+                zoneItem.state.edgeCount[zoneItem.state.EDGE_WILL],
+            ].join('|')
+            var criticalKey=[
+                zoneItem.afterStats.smallClosedNum,
+                zoneItem.afterStats.largeClosedNum,
+                zoneItem.afterStats.largeRingNum,
+                zoneItem.afterStats.largeNonRingNum,
+                zoneItem.afterStats.boundaryLargeClosedNum,
+                zoneItem.afterStats.innerLargeClosedNum,
+                zoneItem.afterStats.maxClosedSize,
+            ].join('|')
+            fineOutcomes[fineKey]=true
+            criticalOutcomes[criticalKey]=true
+            geometryOutcomes[zoneItem.geometryKey+'>'+criticalKey]=true
+        }
+
+        var fineList=Object.keys(fineOutcomes).sort()
+        var criticalList=Object.keys(criticalOutcomes).sort()
+        if(fineList.length>1)summary.splitZoneNum++
+        if(criticalList.length>1){
+            summary.criticalSplitZoneNum++
+            zoneKeys.push([
+                zone.length,
+                fineList.length,
+                criticalList.length,
+                Object.keys(geometryOutcomes).sort().join('&'),
+            ].join(':'))
+        }
+    }
+
+    if(zoneKeys.length){
+        summary.signature=zoneKeys.sort().join('/')
+    }
+    if(!arguments.length || analyses===this.__safeEdgeAnalyses){
+        this.__structureOpportunitySummary=summary
+    }
+    return summary
+}
+GameData.prototype.getStructureOpportunityFingerprint=function(analyses){
+    return this.getStructureOpportunitySummary(analyses).signature
 }
 GameData.prototype.getSafeEdgeAnalyses=function(){
     if(this.__safeEdgeAnalyses)return this.__safeEdgeAnalyses
     var gameData=this
     var beforeStats=gameData.getRegionStats()
     var beforeStructureKey=gameData.getStructureFingerprint(beforeStats)
-    var beforeControlKey=gameData.getControlFingerprint(beforeStats)
+    var beforeControlKey=gameData.getControlFingerprint(beforeStats,true)
     var beforeEndgame=gameData.isEndgamePhase()
     var analyses=[]
     var edges=gameData.getAllEdges(gameData.EDGE_NOT)
@@ -1087,7 +1220,7 @@ GameData.prototype.getSafeEdgeAnalyses=function(){
         next.putxy(edge.x,edge.y)
         var afterStats=next.getRegionStats()
         var structureKey=next.getStructureFingerprint(afterStats)
-        var controlKey=next.getControlFingerprint(afterStats)
+        var controlKey=next.getControlFingerprint(afterStats,true)
         var endgameNow=next.isEndgamePhase()
         var geometryKey=gameData.getEdgeGeometryKey(edge)
         var geometryParts=geometryKey.split('|')
@@ -1106,9 +1239,6 @@ GameData.prototype.getSafeEdgeAnalyses=function(){
         swingScore+=Math.abs(afterStats.smallClosedNum-beforeStats.smallClosedNum)*8
         swingScore+=Math.abs(afterStats.closedNum-beforeStats.closedNum)*6
         swingScore+=Math.abs(afterStats.maxClosedSize-beforeStats.maxClosedSize)*2
-        if(structureKey!==beforeStructureKey)swingScore+=10
-        if(controlKey!==beforeControlKey)swingScore+=14
-        if(endgameNow!==beforeEndgame)swingScore+=20
         analyses.push({
             edge:{'x':edge.x,'y':edge.y},
             edgeKey:[edge.x,edge.y].join(','),
@@ -1118,8 +1248,6 @@ GameData.prototype.getSafeEdgeAnalyses=function(){
             structureKey:structureKey,
             controlKey:controlKey,
             geometryScore:geometryScore,
-            isIrrelevant:structureKey===beforeStructureKey,
-            isControlSwing:controlKey!==beforeControlKey || endgameNow!==beforeEndgame,
             parityKey:[
                 (next.countSafeEdges()+afterStats.smallClosedNum)%2===0?1:0,
                 geometryKey,
@@ -1128,6 +1256,16 @@ GameData.prototype.getSafeEdgeAnalyses=function(){
             ].join('|'),
             swingScore:swingScore,
         })
+    }
+    for(var aa=0,analysis;analysis=analyses[aa];aa++){
+        if(analysis.structureKey!==beforeStructureKey)analysis.swingScore+=10
+        if(analysis.controlKey!==beforeControlKey)analysis.swingScore+=14
+        if(analysis.state.isEndgamePhase()!==beforeEndgame)analysis.swingScore+=20
+        analysis.opportunityKey='na'
+        analysis.isIrrelevant=analysis.structureKey===beforeStructureKey
+        analysis.isControlSwing=
+            analysis.controlKey!==beforeControlKey ||
+            analysis.state.isEndgamePhase()!==beforeEndgame
     }
     analyses.sort(function(a,b){
         if(a.isControlSwing!==b.isControlSwing)return a.isControlSwing?-1:1

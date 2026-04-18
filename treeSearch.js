@@ -960,6 +960,7 @@ TreeSearchAI.prototype.getRouteFingerprint = function(gameData){
         gameData.edgeCount[gameData.EDGE_NOT],
         gameData.edgeCount[gameData.EDGE_WILL],
         this.getTopologyFingerprint(gameData,stats),
+        gameData.getControlFingerprint(stats),
     ].join('|')
 }
 
@@ -1182,8 +1183,16 @@ TreeSearchAI.prototype.evaluateStructure = function(gameData){
     score+=stats.innerLargeClosedNum*currentSign*110
     score+=stats.maxClosedSize*currentSign*18
 
-    if(features.controlSwingCount && features.safeEdgeCount<=12){
-        score+=features.controlSwingCount*18
+    if(features.safeEdgeCount<=12){
+        if(features.controlSwingCount){
+            score+=currentSign*features.controlSwingCount*18
+        }
+        if(features.criticalSplitZoneNum){
+            score+=currentSign*features.criticalSplitZoneNum*42
+        }
+        if(features.phase!=='layout' && features.lastCriticalSplitZone){
+            score+=currentSign*90
+        }
     }
     if(features.phase==='layout' && features.controlSwingCount===0){
         score+=currentSign*features.safeSmallParitySignal*16

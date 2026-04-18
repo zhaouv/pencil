@@ -304,8 +304,164 @@ var CASES = [
         expect: {
             phase: 'transition',
             largeClosedNum: 3,
-            bestMove: [12, 3],
+            bestMoveAny: [[12, 3], [11, 12]],
             searchDepth: 3,
+        },
+    },
+    {
+        name: 'late_structure_opportunity_root',
+        xsize: 6,
+        ysize: 6,
+        history: [
+            [6, 5, 0],
+            [1, 0, 1],
+            [6, 1, 0],
+            [5, 0, 1],
+            [8, 3, 0],
+            [3, 0, 1],
+            [9, 4, 0],
+            [9, 0, 1],
+            [3, 6, 0],
+            [3, 2, 1],
+            [12, 3, 0],
+            [11, 0, 1],
+            [8, 9, 0],
+            [11, 4, 1],
+            [7, 6, 0],
+            [7, 0, 1],
+            [2, 9, 0],
+            [10, 5, 1],
+            [5, 8, 0],
+            [0, 3, 1],
+            [4, 3, 0],
+            [1, 4, 1],
+            [4, 5, 0],
+            [0, 1, 1],
+            [4, 11, 0],
+            [0, 5, 1],
+            [12, 9, 0],
+            [10, 1, 1],
+            [8, 11, 0],
+            [6, 3, 1],
+            [9, 8, 0],
+            [10, 7, 1],
+            [3, 10, 0],
+            [6, 7, 1],
+            [1, 8, 0],
+            [2, 7, 1],
+            [6, 9, 0],
+        ],
+        expect: {
+            phase: 'transition',
+            minControlSwing: 1,
+            minCriticalSplitZones: 1,
+            lastCriticalSplitZone: 1,
+            bestMove: [6, 11],
+            searchDepth: 3,
+        },
+    },
+    {
+        name: 'late_structure_opportunity_after_11_8',
+        xsize: 6,
+        ysize: 6,
+        history: [
+            [6, 5, 0],
+            [1, 0, 1],
+            [6, 1, 0],
+            [5, 0, 1],
+            [8, 3, 0],
+            [3, 0, 1],
+            [9, 4, 0],
+            [9, 0, 1],
+            [3, 6, 0],
+            [3, 2, 1],
+            [12, 3, 0],
+            [11, 0, 1],
+            [8, 9, 0],
+            [11, 4, 1],
+            [7, 6, 0],
+            [7, 0, 1],
+            [2, 9, 0],
+            [10, 5, 1],
+            [5, 8, 0],
+            [0, 3, 1],
+            [4, 3, 0],
+            [1, 4, 1],
+            [4, 5, 0],
+            [0, 1, 1],
+            [4, 11, 0],
+            [0, 5, 1],
+            [12, 9, 0],
+            [10, 1, 1],
+            [8, 11, 0],
+            [6, 3, 1],
+            [9, 8, 0],
+            [10, 7, 1],
+            [3, 10, 0],
+            [6, 7, 1],
+            [1, 8, 0],
+            [2, 7, 1],
+            [6, 9, 0],
+            [11, 8, 1],
+        ],
+        expect: {
+            phase: 'transition',
+            minControlSwing: 2,
+            minCriticalSplitZones: 1,
+            lastCriticalSplitZone: 1,
+        },
+    },
+    {
+        name: 'late_structure_opportunity_after_11_8_then_6_11',
+        xsize: 6,
+        ysize: 6,
+        history: [
+            [6, 5, 0],
+            [1, 0, 1],
+            [6, 1, 0],
+            [5, 0, 1],
+            [8, 3, 0],
+            [3, 0, 1],
+            [9, 4, 0],
+            [9, 0, 1],
+            [3, 6, 0],
+            [3, 2, 1],
+            [12, 3, 0],
+            [11, 0, 1],
+            [8, 9, 0],
+            [11, 4, 1],
+            [7, 6, 0],
+            [7, 0, 1],
+            [2, 9, 0],
+            [10, 5, 1],
+            [5, 8, 0],
+            [0, 3, 1],
+            [4, 3, 0],
+            [1, 4, 1],
+            [4, 5, 0],
+            [0, 1, 1],
+            [4, 11, 0],
+            [0, 5, 1],
+            [12, 9, 0],
+            [10, 1, 1],
+            [8, 11, 0],
+            [6, 3, 1],
+            [9, 8, 0],
+            [10, 7, 1],
+            [3, 10, 0],
+            [6, 7, 1],
+            [1, 8, 0],
+            [2, 7, 1],
+            [6, 9, 0],
+            [11, 8, 1],
+            [6, 11, 0],
+        ],
+        expect: {
+            phase: 'transition',
+            minControlSwing: 1,
+            maxControlSwing: 1,
+            maxCriticalSplitZones: 1,
+            lastCriticalSplitZone: 1,
         },
     },
     {
@@ -671,6 +827,15 @@ for (var cc = 0; cc < CASES.length; cc++) {
         if (caseDef.expect.minControlSwing != null) {
             explicitControlSwing = gd.getControlSwingStructures().length
         }
+        var explicitOpportunity = null
+        if (
+            caseDef.expect.minCriticalSplitZones != null ||
+            caseDef.expect.maxCriticalSplitZones != null ||
+            caseDef.expect.lastCriticalSplitZone != null ||
+            caseDef.expect.structureOpportunitySignature != null
+        ) {
+            explicitOpportunity = gd.getStructureOpportunitySummary()
+        }
         var ai = new TreeSearchAI()
         ai.playerId = gd.playerId
         ai.exactEndgameCache = {}
@@ -685,7 +850,7 @@ for (var cc = 0; cc < CASES.length; cc++) {
             normalPrefixes = ai.generateScorePrefixes(gd)
             exactPrefixes = ai.generateExactScorePrefixes(gd)
         }
-        if (caseDef.expect.bestMove) {
+        if (caseDef.expect.bestMove || caseDef.expect.bestMoveAny) {
             ai.transposition = {}
             ai.historyTable = {}
             ai.searchStats = { node: 0, cacheHit: 0, cut: 0, ttCut: 0 }
@@ -708,6 +873,12 @@ for (var cc = 0; cc < CASES.length; cc++) {
                 caseDef.name + ' controlSwingCount too small: ' + explicitControlSwing
             )
         }
+        if (caseDef.expect.maxControlSwing != null) {
+            assertCase(
+                features.controlSwingCount <= caseDef.expect.maxControlSwing,
+                caseDef.name + ' controlSwingCount too large: ' + features.controlSwingCount
+            )
+        }
         if (caseDef.expect.minSafeEdges != null) {
             assertCase(
                 features.safeEdgeCount >= caseDef.expect.minSafeEdges,
@@ -724,6 +895,34 @@ for (var cc = 0; cc < CASES.length; cc++) {
             assertCase(
                 features.scoreEdgeCount >= caseDef.expect.minScoreEdges,
                 caseDef.name + ' scoreEdgeCount too small: ' + features.scoreEdgeCount
+            )
+        }
+        if (caseDef.expect.minCriticalSplitZones != null) {
+            assertCase(
+                explicitOpportunity.criticalSplitZoneNum >= caseDef.expect.minCriticalSplitZones,
+                caseDef.name + ' criticalSplitZoneNum too small: ' +
+                    explicitOpportunity.criticalSplitZoneNum
+            )
+        }
+        if (caseDef.expect.maxCriticalSplitZones != null) {
+            assertCase(
+                explicitOpportunity.criticalSplitZoneNum <= caseDef.expect.maxCriticalSplitZones,
+                caseDef.name + ' criticalSplitZoneNum too large: ' +
+                    explicitOpportunity.criticalSplitZoneNum
+            )
+        }
+        if (caseDef.expect.lastCriticalSplitZone != null) {
+            assertCase(
+                features.lastCriticalSplitZone === caseDef.expect.lastCriticalSplitZone,
+                caseDef.name + ' lastCriticalSplitZone mismatch: ' +
+                    features.lastCriticalSplitZone
+            )
+        }
+        if (caseDef.expect.structureOpportunitySignature != null) {
+            assertCase(
+                features.structureOpportunitySignature === caseDef.expect.structureOpportunitySignature,
+                caseDef.name + ' structureOpportunitySignature mismatch: ' +
+                    features.structureOpportunitySignature
             )
         }
         if (caseDef.expect.largeClosedNum != null) {
@@ -771,6 +970,28 @@ for (var cc = 0; cc < CASES.length; cc++) {
             assertCase(
                 best.route.moves[0].x === caseDef.expect.bestMove[0] &&
                     best.route.moves[0].y === caseDef.expect.bestMove[1],
+                caseDef.name + ' best move mismatch: ' +
+                    [best.route.moves[0].x, best.route.moves[0].y].join(',')
+            )
+        }
+        if (caseDef.expect.bestMoveAny) {
+            assertCase(
+                best && best.route && best.route.moves && best.route.moves.length,
+                caseDef.name + ' best route missing'
+            )
+            var matchedBestMoveAny = false
+            for (var bb = 0; bb < caseDef.expect.bestMoveAny.length; bb++) {
+                var expectedMove = caseDef.expect.bestMoveAny[bb]
+                if (
+                    best.route.moves[0].x === expectedMove[0] &&
+                    best.route.moves[0].y === expectedMove[1]
+                ) {
+                    matchedBestMoveAny = true
+                    break
+                }
+            }
+            assertCase(
+                matchedBestMoveAny,
                 caseDef.name + ' best move mismatch: ' +
                     [best.route.moves[0].x, best.route.moves[0].y].join(',')
             )

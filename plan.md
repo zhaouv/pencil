@@ -68,13 +68,14 @@
       - 边界链与内部链混合（边界链 + ring 已补一例）
       - “一个区域有多种分割方式”的方向性断言
       - “最后一个能改变先后手的结构被哪一方保留 / 拿走”的方向性断言
-      - 把录像里的 `6,9 -> 11,8 -> 6,11` 拆成固定断言：
-        - `6,9` 后不能再把 `11,8` 视为稳定最佳方向
-        - 若已走到 `11,8 -> 6,11`，状态表达至少要能区分“最后一个结构机会已被对手拿走”
+      - 本轮已把录像里的 `6,9 -> 11,8 -> 6,11` 拆成第一版固定断言：
+        - `6,9` 后根选点已改成 `6,11`，不再稳定选 `11,8`
+        - `11,8` 后与 `11,8 -> 6,11` 后的结构机会签名已能区分
+      - 下一步把这组断言继续收紧到“最后一个决定性结构机会的归属 / 交接”，而不是只看 zone 数量
     - 优先补状态抽象缺口，而不是先调一般权重：
-      - 给 `GameData` 增加“分割机会签名 / 最后一个结构机会归属”这类区域级信息
-      - 把这类签名并进 `controlFingerprint / route fingerprint / late cache key`
-      - 重点避免“当前聚合计数相同，但未来还能否改变无环区域数不同”的状态被误并
+      - 本轮已给 `GameData` 增加第一版“结构机会区签名 / critical split zone”信息
+      - 已把这类签名并进 `controlFingerprint / route fingerprint`
+      - 下一步继续把“最后一个结构机会归属谁 / 被谁拿走”补成显式状态，而不是只停留在 zone 计数
     - 在上面这层状态表达落地后，再继续修 exact 内部候选缺口，优先查：
       - 多得分区切换时的 exact prefix 是否漏分支
       - 长链 / 长环 `control` 已补后，是否仍存在更复杂区域的 `leave-control` 断口
@@ -504,9 +505,21 @@
   - `ts vs ok` 为 `4:0`
   - `ts vs gr` 为 `4:0`
 - 本轮又把 `seed=8` 固定输局翻成赢局，并把当前版本 `ts vs ok` 的 2+2 重跑为 `4:0`，但当前版本对 `gr` 尚未重跑同口径 2+2，因此还没有形成可宣称稳定的胜率优势
+- 本轮已落地第一版“结构机会区”状态表达：
+  - `GameData` 新增 `structureOpportunitySummary / signature`
+  - `getEvalFeatures()` 新增 `splitOpportunityZoneNum / criticalSplitZoneNum / lastCriticalSplitZone`
+  - `controlFingerprint / route fingerprint` 已并入这层签名
+  - `transition` 阶段的 `controlSwing` 已改成带当前回合方向的信号，不再无符号加分
+- 本轮已把 `6,9 -> 11,8 -> 6,11` 的主样例固定进 `ts_cases.js`：
+  - `6,9` 后根选点现固定为 `6,11`
+  - `11,8` 后会识别出更多结构机会
+  - `11,8 -> 6,11` 后会识别出结构机会被压缩，但当前还没有显式表达“最后一个决定性结构机会归属谁”
+- `late_safe_window_choice` 的代表边已从旧的 `12,3` 切到同指纹的 `11,12`，回归已放宽为等价代表边断言
+- 新 spot check：
+  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前为 `TS 1:0 OK`，平均步数 `69`，约 `44.8s`
 - 固定局面样例还缺：
   - 边界链与内部链混合
-  - 更强的“多种分割方式”方向性断言
+  - 更强的“最后一个决定性结构机会归属 / 交接”断言
 - 已有 `--seed` 支持，但还没有基于固定 seed 集的更大样本 benchmark
 - `controlSwing`、大区域归属和 transition 阶段的权重仍然偏经验值，需要结合输局继续校正
 - 当前无安全步精确收官虽然已补 exact TT、根结点 exact 路线直切、小得分区 score route 校验、live `scoreRegion` 实时扫描、长链 / 长环 `score-control`、`EDGE_NOT<=5` 的小安全边数 exact，且部分状态可把最大 exact 分支从 `43` 压到 `26`，并把 `seed=8` 固定输局翻成赢局，但最新整局 spot check 仍会遇到 `40` 路左右的 exact 状态，且当前版本 `ts vs ok` 的 2+2 仍耗时约 `9m48s`，因此 exact 内部候选和分支压缩仍未完成
@@ -521,11 +534,10 @@
 - 已补一个来自 `test_record.md` 的稳定让分回归：在 `L2` / `L4` 同值时，当前会优先选 `L2` 的中间边，而不是把 `L4` 或边界边排到前面
 - 已补一个来自 `test_record.md` 的组合路线回归：`score-all+sacrifice` 现在会保留 continuation 的让分排序，不再把 `3,12 -> 9,12` 这种次优第二手缓存进 `routePlan`
 - 最新对局分析说明当前更核心的缺口不是一般意义上的 parity 权重，而是“最后一个能改变先后手的结构”没有被当作区域级状态保存：
-  - 现在的 `controlSwing / structure fingerprint / control fingerprint` 仍主要是聚合计数
-  - 这不足以表示“某个具体区域是否还保留多种分割方式，以及这些分割对无环区域数的影响”
-  - 因而当前实现可能把“当前总数相同、但最后一个结构机会归属不同”的局面视为同类
-  - 下一轮应优先补这一层状态表达，再决定 late solver 和评估函数如何使用它
-  - 在这层状态表达落地后，再回头针对 exact sacrifice 的排序和分支压缩继续下刀
+  - 这一轮已补上第一版 `structure opportunity zone` 的显式表达，并接进了评估和 route fingerprint
+  - 当前仍不足的是“最后一个决定性结构机会归属谁 / 被谁拿走”的 owner 级表达
+  - 例如 `11,8 -> 6,11` 之后，当前实现已经能看见结构机会被压缩，但还没有把“决定性机会的交接”编码成单独状态
+  - 因而下一轮应先把 owner / handoff 级状态补完，再决定 late solver 和 exact candidate 是否要继续细分
 
 ### 评估函数建议特征
 
