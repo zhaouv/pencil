@@ -169,6 +169,10 @@ node aivsai.js -1 ts -2 ok -n 5 -s
   - `ring4_sacrifice_choice` 的 exact 根节点从 `10` 降到 `8`
   - `node ts_cases.js` 当前约 `21.4s`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前约 `31.7s`
+- 本轮又直接回到该热点本身复核：
+  - `seed=7 / ply=43` 当前也已从 `20` 条 exact route 降到 `16`
+  - 同一局面上的 `solveLateEndgame()` 已从约 `36s` 降到约 `9.3s`
+  - 但整局 `seed=7` 的复测在约 `2m` 内仍未结束，说明后面还有其他慢点，热点定位还要继续
 - 旧的 `seed=8` 固定输局已在本轮翻成赢局，但这并不代表 exact 内部候选已经完整；整局里仍会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩，并重新扫描新的稳定输局样本
 - 更大样本 benchmark 依然不适合直接放大
 - 后续如果要继续提胜率，必须同时优化：

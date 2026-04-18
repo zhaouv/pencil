@@ -81,6 +81,8 @@
       - 本轮又把 `exact sacrifice bucket` 的几何方向 `h / v` 从 key 里去掉，先做保守压缩：
         - `exact_root_sacrifice_choice` 的 exact 根节点现已从 `20` 降到 `16`
         - `ring4_sacrifice_choice` 的 exact 根节点现已从 `10` 降到 `8`
+        - `seed=7 / ply=43` 的热点状态现已从 `20` 条 exact route 降到 `16` 条
+        - 同一热点状态上，`solveLateEndgame()` 已从约 `36s` 降到约 `9.3s`
       - 下一步不是重复补状态，而是继续验证这层 beneficiary ordering 是否值得扩大范围；它仍不适合直接塞进 `evaluateStructure()` 的 hot path
         - 另外，当前 `estimateOpportunityOutcomeValue()` 对经典 handoff 的 `allow / block` 两个 outcome 仍都会给出正分，不能直接拿“纯静态替 exact”来接这层信号
     - 优先补状态抽象缺口，而不是先调一般权重：
@@ -559,8 +561,9 @@
   - 当前还没有把这条结论外推到 `seed=7 / ply=43`，下一步仍需专门复核热点本身
 - 当前已抓到一个更具体的性能瓶颈样本：
   - `seed=7` 的 `ply=43` 是 `0/0/42` 的纯 sacrifice endgame
-  - 该状态当前会生成 `20` 条 exact route
-  - `solveLateEndgame()` 单点约跑 `66,971` 个 exact 节点、耗时约 `36s`
+  - 该状态旧记录为 `20` 条 exact route、`solveLateEndgame()` 约 `36s`
+  - 当前版本已把它压到 `16` 条 exact route、单点约 `9.3s`
+  - 但整局 `seed=7` 的复测在约 `2m` 内仍未结束，说明该局还有其他后续热点，不能把这次压缩等同于“整局已修完”
   - 已试过的简单 `generateExactSacrificeRoutes().slice(...)` 限流不可直接采用：
     - `top 8` 会把该状态从 `win` 剪成 `loss`
     - `top 12` 会把该状态从 `win` 剪成 `draw`
@@ -575,7 +578,7 @@
   - 例如 `11,8 -> 6,11 -> 10,11 -> 12,11` 之后，当前实现现已固定识别为“最后一个动作机会归对手，且 outcome 也归对手受益”
   - 本轮又把 beneficiary 窄接进了 `safe 4 -> 2` 的 route ordering，说明这层状态已经开始进入主搜索
   - 本轮又把 exact sacrifice bucket 做了保守压缩，至少在固定收官样例里已经看到根节点数下降而不改最佳解
-  - 当前真正剩下的不是“有没有这层状态”，而是“是否值得继续把 beneficiary 从 `safe 4 -> 2` 扩到更宽的 late exact 入口，以及怎样控制它的调用成本”
+  - 当前真正剩下的不是“有没有这层状态”，而是“如何继续沿 `seed=7` 这类慢局把下一个热点揪出来”，以及“是否值得继续把 beneficiary 从 `safe 4 -> 2` 扩到更宽的 late exact 入口”
 
 ### 评估函数建议特征
 
