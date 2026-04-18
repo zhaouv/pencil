@@ -11,7 +11,7 @@ TreeSearchAI.prototype.SEARCH_DEPTH=3
 TreeSearchAI.prototype.QUIESCENCE_DEPTH=10
 TreeSearchAI.prototype.ENDGAME_DEPTH=16
 TreeSearchAI.prototype.ENDGAME_SAFE_EDGE_THRESHOLD=6
-TreeSearchAI.prototype.EXACT_SAFE_EDGE_LIMIT=1
+TreeSearchAI.prototype.EXACT_SAFE_EDGE_LIMIT=5
 TreeSearchAI.prototype.MAX_SCORE=100000000
 TreeSearchAI.prototype.SAFE_ROUTE_LIMIT=8
 TreeSearchAI.prototype.SACRIFICE_ROUTE_LIMIT=6
@@ -233,8 +233,8 @@ TreeSearchAI.prototype.searchState = function(gameData, depth, alpha, beta){
     if(gameData.winnerId!=null){
         return this.getTerminalScore(gameData)
     }
-    if(!gameData.edgeCount[gameData.EDGE_NOT]){
-        return this.solveExactEndgame(gameData)
+    if(gameData.edgeCount[gameData.EDGE_NOT]<=this.EXACT_SAFE_EDGE_LIMIT){
+        return this.solveLateEndgame(gameData)
     }
     if(depth<=0){
         return this.searchQuiescence(
@@ -302,8 +302,8 @@ TreeSearchAI.prototype.searchQuiescence = function(gameData, depth, alpha, beta)
     if(gameData.winnerId!=null){
         return this.getTerminalScore(gameData)
     }
-    if(!gameData.edgeCount[gameData.EDGE_NOT]){
-        return this.solveExactEndgame(gameData)
+    if(gameData.edgeCount[gameData.EDGE_NOT]<=this.EXACT_SAFE_EDGE_LIMIT){
+        return this.solveLateEndgame(gameData)
     }
     var stats=gameData.getRegionStats()
     var stand=this.evaluate(gameData)
