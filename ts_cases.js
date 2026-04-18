@@ -463,7 +463,66 @@ var CASES = [
             maxCriticalSplitZones: 1,
             minDeferredCriticalSplitZones: 1,
             minBlockableDeferredCriticalSplitZones: 1,
+            minCurrentOwnedOpportunityZones: 1,
+            minOpponentOwnedOpportunityZones: 1,
             lastCriticalSplitZone: 1,
+            lastOpportunityOwnerSign: 0,
+        },
+    },
+    {
+        name: 'late_structure_opportunity_handoff_after_12_11',
+        xsize: 6,
+        ysize: 6,
+        history: [
+            [6, 5, 0],
+            [1, 0, 1],
+            [6, 1, 0],
+            [5, 0, 1],
+            [8, 3, 0],
+            [3, 0, 1],
+            [9, 4, 0],
+            [9, 0, 1],
+            [3, 6, 0],
+            [3, 2, 1],
+            [12, 3, 0],
+            [11, 0, 1],
+            [8, 9, 0],
+            [11, 4, 1],
+            [7, 6, 0],
+            [7, 0, 1],
+            [2, 9, 0],
+            [10, 5, 1],
+            [5, 8, 0],
+            [0, 3, 1],
+            [4, 3, 0],
+            [1, 4, 1],
+            [4, 5, 0],
+            [0, 1, 1],
+            [4, 11, 0],
+            [0, 5, 1],
+            [12, 9, 0],
+            [10, 1, 1],
+            [8, 11, 0],
+            [6, 3, 1],
+            [9, 8, 0],
+            [10, 7, 1],
+            [3, 10, 0],
+            [6, 7, 1],
+            [1, 8, 0],
+            [2, 7, 1],
+            [6, 9, 0],
+            [11, 8, 1],
+            [6, 11, 0],
+            [10, 11, 1],
+            [12, 11, 0],
+        ],
+        expect: {
+            phase: 'transition',
+            minDeferredCriticalSplitZones: 1,
+            minBlockableDeferredCriticalSplitZones: 1,
+            maxCurrentOwnedOpportunityZones: 0,
+            minOpponentOwnedOpportunityZones: 1,
+            lastOpportunityOwnerSign: -1,
         },
     },
     {
@@ -837,6 +896,11 @@ for (var cc = 0; cc < CASES.length; cc++) {
             caseDef.expect.maxDeferredCriticalSplitZones != null ||
             caseDef.expect.minBlockableDeferredCriticalSplitZones != null ||
             caseDef.expect.maxBlockableDeferredCriticalSplitZones != null ||
+            caseDef.expect.minCurrentOwnedOpportunityZones != null ||
+            caseDef.expect.maxCurrentOwnedOpportunityZones != null ||
+            caseDef.expect.minOpponentOwnedOpportunityZones != null ||
+            caseDef.expect.maxOpponentOwnedOpportunityZones != null ||
+            caseDef.expect.lastOpportunityOwnerSign != null ||
             caseDef.expect.lastCriticalSplitZone != null ||
             caseDef.expect.structureOpportunitySignature != null
         ) {
@@ -954,6 +1018,46 @@ for (var cc = 0; cc < CASES.length; cc++) {
                     caseDef.expect.maxBlockableDeferredCriticalSplitZones,
                 caseDef.name + ' blockableDeferredCriticalSplitZoneNum too large: ' +
                     explicitOpportunity.blockableDeferredCriticalSplitZoneNum
+            )
+        }
+        if (caseDef.expect.minCurrentOwnedOpportunityZones != null) {
+            assertCase(
+                explicitOpportunity.currentOwnedOpportunityZoneNum >=
+                    caseDef.expect.minCurrentOwnedOpportunityZones,
+                caseDef.name + ' currentOwnedOpportunityZoneNum too small: ' +
+                    explicitOpportunity.currentOwnedOpportunityZoneNum
+            )
+        }
+        if (caseDef.expect.maxCurrentOwnedOpportunityZones != null) {
+            assertCase(
+                explicitOpportunity.currentOwnedOpportunityZoneNum <=
+                    caseDef.expect.maxCurrentOwnedOpportunityZones,
+                caseDef.name + ' currentOwnedOpportunityZoneNum too large: ' +
+                    explicitOpportunity.currentOwnedOpportunityZoneNum
+            )
+        }
+        if (caseDef.expect.minOpponentOwnedOpportunityZones != null) {
+            assertCase(
+                explicitOpportunity.opponentOwnedOpportunityZoneNum >=
+                    caseDef.expect.minOpponentOwnedOpportunityZones,
+                caseDef.name + ' opponentOwnedOpportunityZoneNum too small: ' +
+                    explicitOpportunity.opponentOwnedOpportunityZoneNum
+            )
+        }
+        if (caseDef.expect.maxOpponentOwnedOpportunityZones != null) {
+            assertCase(
+                explicitOpportunity.opponentOwnedOpportunityZoneNum <=
+                    caseDef.expect.maxOpponentOwnedOpportunityZones,
+                caseDef.name + ' opponentOwnedOpportunityZoneNum too large: ' +
+                    explicitOpportunity.opponentOwnedOpportunityZoneNum
+            )
+        }
+        if (caseDef.expect.lastOpportunityOwnerSign != null) {
+            assertCase(
+                explicitOpportunity.lastOpportunityOwnerSign ===
+                    caseDef.expect.lastOpportunityOwnerSign,
+                caseDef.name + ' lastOpportunityOwnerSign mismatch: ' +
+                    explicitOpportunity.lastOpportunityOwnerSign
             )
         }
         if (caseDef.expect.structureOpportunitySignature != null) {

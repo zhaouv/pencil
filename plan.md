@@ -72,7 +72,8 @@
         - `6,9` 后根选点已改成 `6,11`，不再稳定选 `11,8`
         - `11,8` 后与 `11,8 -> 6,11` 后的结构机会签名已能区分
         - 末尾补充说明里的特殊局部也已补进状态摘要：`[0,11][1,12]` 这类需要两手兑现、但会被 `[2,11]` 一手 sacrifice 封死的机会，现单独记为 `deferred + blockable`
-      - 下一步把这组断言继续收紧到“最后一个决定性结构机会的归属 / 交接”，而不是只看 zone 数量
+        - 本轮又补了第一版 `owner / handoff` 摘要：当前方拥有几个机会、对手拥有几个机会、是否只剩最后一个机会且归谁
+      - 下一步把这组断言继续收紧到“最后一个机会对应的目标 outcome 归谁受益”，而不是只看 action owner
     - 优先补状态抽象缺口，而不是先调一般权重：
       - 本轮已给 `GameData` 增加第一版“结构机会区签名 / critical split zone”信息
       - 已把这类签名并进 `controlFingerprint / route fingerprint`
@@ -515,6 +516,10 @@
   - 新增 `deferredCriticalSplitZoneNum / blockableDeferredCriticalSplitZoneNum`
   - 用于表示“理论上能改无环区域数，但需要同一方连续两手兑现，并且可能被对手一手 sacrifice 封死”的局部
   - 当前这层信息先并进 `structureOpportunitySignature`，还没有直接进入评估分数
+- 本轮又把 `owner / handoff` 落成了第三层状态：
+  - 新增 `currentOwnedOpportunityZoneNum / opponentOwnedOpportunityZoneNum / lastOpportunityOwnerSign`
+  - 并补了 `late_structure_opportunity_handoff_after_12_11`，固定“只剩最后一个机会且 action owner 已交给对手”的节点
+  - 当前这层仍只表达“谁掌握动作控制权”，还没有表达“哪个 outcome 对哪一方更有利”
 - 本轮已把 `6,9 -> 11,8 -> 6,11` 的主样例固定进 `ts_cases.js`：
   - `6,9` 后根选点现固定为 `6,11`
   - `11,8` 后会识别出更多结构机会
@@ -541,9 +546,10 @@
 - 最新对局分析说明当前更核心的缺口不是一般意义上的 parity 权重，而是“最后一个能改变先后手的结构”没有被当作区域级状态保存：
   - 这一轮已补上第一版 `structure opportunity zone` 的显式表达，并接进了评估和 route fingerprint
   - 这一轮又补上了 `deferred + blockable` 的第二层表达，能区分“理论机会”和“会被一手 sacrifice 封死的机会”
-  - 当前仍不足的是“最后一个决定性结构机会归属谁 / 被谁拿走”的 owner 级表达
-  - 例如 `11,8 -> 6,11` 之后，当前实现已经能看见一个 `deferred + blockable` 局部，但还没有把“决定性机会的交接”编码成单独状态
-  - 因而下一轮应先把 owner / handoff 级状态补完，再决定 late solver 和 exact candidate 是否要继续细分
+  - 这一轮又补上了 `owner / handoff` 的第三层表达，已经能区分“动作控制权”是否交接
+  - 当前仍不足的是“最后一个机会对应的目标 outcome 归谁受益”，也就是 action owner 和 winning owner 还没有拆开
+  - 例如 `11,8 -> 6,11 -> 10,11 -> 12,11` 之后，当前实现已能看见“最后一个动作机会归对手”，但还不能直接表达“这个 outcome 对哪一方更有利”
+  - 因而下一轮应先把 outcome-beneficiary 级状态补完，再决定是否把这层信号真正抬进 late eval
 
 ### 评估函数建议特征
 

@@ -962,6 +962,9 @@ GameData.prototype.getEvalFeatures=function(){
         criticalSplitZoneNum:0,
         deferredCriticalSplitZoneNum:0,
         blockableDeferredCriticalSplitZoneNum:0,
+        currentOwnedOpportunityZoneNum:0,
+        opponentOwnedOpportunityZoneNum:0,
+        lastOpportunityOwnerSign:0,
         lastCriticalSplitZone:0,
         structureOpportunitySignature:'none',
     }
@@ -1033,6 +1036,9 @@ GameData.prototype.getEvalFeatures=function(){
             features.deferredCriticalSplitZoneNum=opportunity.deferredCriticalSplitZoneNum
             features.blockableDeferredCriticalSplitZoneNum=
                 opportunity.blockableDeferredCriticalSplitZoneNum
+            features.currentOwnedOpportunityZoneNum=opportunity.currentOwnedOpportunityZoneNum
+            features.opponentOwnedOpportunityZoneNum=opportunity.opponentOwnedOpportunityZoneNum
+            features.lastOpportunityOwnerSign=opportunity.lastOpportunityOwnerSign
             features.lastCriticalSplitZone=opportunity.criticalSplitZoneNum===1?1:0
             features.structureOpportunitySignature=opportunity.signature
         }
@@ -1208,6 +1214,9 @@ GameData.prototype.getStructureOpportunitySummary=function(analyses){
         criticalSplitZoneNum:0,
         deferredCriticalSplitZoneNum:0,
         blockableDeferredCriticalSplitZoneNum:0,
+        currentOwnedOpportunityZoneNum:0,
+        opponentOwnedOpportunityZoneNum:0,
+        lastOpportunityOwnerSign:0,
         signature:'none',
     }
     if(!analyses.length){
@@ -1272,8 +1281,9 @@ GameData.prototype.getStructureOpportunitySummary=function(analyses){
         if(fineList.length>1)summary.splitZoneNum++
         if(criticalList.length>1){
             summary.criticalSplitZoneNum++
+            summary.currentOwnedOpportunityZoneNum++
             zoneKeys.push([
-                'immediate',
+                'owned-current-immediate',
                 zone.length,
                 fineList.length,
                 criticalList.length,
@@ -1286,9 +1296,12 @@ GameData.prototype.getStructureOpportunitySummary=function(analyses){
             summary.deferredCriticalSplitZoneNum++
             if(delayedInfo.blockable){
                 summary.blockableDeferredCriticalSplitZoneNum++
+                summary.opponentOwnedOpportunityZoneNum++
+            } else {
+                summary.currentOwnedOpportunityZoneNum++
             }
             zoneKeys.push([
-                delayedInfo.blockable?'delayed-blockable':'delayed-owned',
+                delayedInfo.blockable?'owned-opponent-delayed':'owned-current-delayed',
                 zone.length,
                 delayedInfo.pathCount,
                 zone.map(function(item){
@@ -1298,6 +1311,16 @@ GameData.prototype.getStructureOpportunitySummary=function(analyses){
         }
     }
 
+    var totalOwnedOpportunityZoneNum=
+        summary.currentOwnedOpportunityZoneNum+
+        summary.opponentOwnedOpportunityZoneNum
+    if(totalOwnedOpportunityZoneNum===1){
+        if(summary.currentOwnedOpportunityZoneNum===1){
+            summary.lastOpportunityOwnerSign=1
+        } else if(summary.opponentOwnedOpportunityZoneNum===1){
+            summary.lastOpportunityOwnerSign=-1
+        }
+    }
     if(zoneKeys.length){
         summary.signature=zoneKeys.sort().join('/')
     }
