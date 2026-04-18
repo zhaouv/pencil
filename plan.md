@@ -77,6 +77,7 @@
         - `GameData` 显式新增 `lastOpportunityBeneficiarySign`
         - `late_structure_opportunity_handoff_after_12_11` 现固定为 `lastOpportunityOwnerSign=-1` 且 `lastOpportunityBeneficiarySign=-1`
       - 下一步不是重复补状态，而是把这层 beneficiary 信号以低成本方式接进 late eval / fingerprint；本轮直接在常规评估里调用局部 exact 会把 `ts_cases.js` 从约 `16s` 拉到约 `58s`，因此已回退
+        - 另外，当前 `estimateOpportunityOutcomeValue()` 对经典 handoff 的 `allow / block` 两个 outcome 仍都会给出正分，不能直接拿“纯静态替 exact”来接这层信号
     - 优先补状态抽象缺口，而不是先调一般权重：
       - 本轮已给 `GameData` 增加第一版“结构机会区签名 / critical split zone”信息
       - 已把这类签名并进 `controlFingerprint / route fingerprint`
