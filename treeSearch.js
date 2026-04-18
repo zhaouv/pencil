@@ -1011,6 +1011,17 @@ TreeSearchAI.prototype.getRouteOrderScore = function(beforeGameData, afterGameDa
         } else {
             score+=160
         }
+        if(
+            beforeGameData.edgeCount[beforeGameData.EDGE_NOT]===4 &&
+            afterGameData.edgeCount[afterGameData.EDGE_NOT]===2
+        ){
+            var opportunity=afterGameData.getStructureOpportunitySummary(null,true)
+            if(opportunity.lastOpportunityBeneficiarySign){
+                score+=
+                    (afterGameData.playerId===this.playerId?1:-1)*
+                    opportunity.lastOpportunityBeneficiarySign*260
+            }
+        }
     } else if(tag==='sacrifice'){
         score-=420
         score-=afterStats.smallClosedNum*70
@@ -1189,6 +1200,17 @@ TreeSearchAI.prototype.evaluateStructure = function(gameData){
         }
         if(features.criticalSplitZoneNum){
             score+=currentSign*features.criticalSplitZoneNum*42
+        }
+        var opportunityOwnerSwing=
+            features.currentOwnedOpportunityZoneNum-
+            features.opponentOwnedOpportunityZoneNum
+        if(opportunityOwnerSwing){
+            score+=currentSign*opportunityOwnerSwing*
+                (features.safeEdgeCount<=6?64:36)
+        }
+        if(features.phase!=='layout' && features.lastOpportunityOwnerSign){
+            score+=currentSign*features.lastOpportunityOwnerSign*
+                (features.safeEdgeCount<=6?120:72)
         }
         if(features.phase!=='layout' && features.lastCriticalSplitZone){
             score+=currentSign*90

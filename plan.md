@@ -76,12 +76,14 @@
       - 本轮已把这组断言继续收紧到“最后一个机会对应的目标 outcome 归谁受益”：
         - `GameData` 显式新增 `lastOpportunityBeneficiarySign`
         - `late_structure_opportunity_handoff_after_12_11` 现固定为 `lastOpportunityOwnerSign=-1` 且 `lastOpportunityBeneficiarySign=-1`
-      - 下一步不是重复补状态，而是把这层 beneficiary 信号以低成本方式接进 late eval / fingerprint；本轮直接在常规评估里调用局部 exact 会把 `ts_cases.js` 从约 `16s` 拉到约 `58s`，因此已回退
+      - 本轮已先把廉价的 `owner / handoff` 信号接进 `TreeSearchAI.evaluateStructure()`，让 `safe<=12` 的 late eval 能直接看见 `currentOwnedOpportunityZoneNum / opponentOwnedOpportunityZoneNum / lastOpportunityOwnerSign`
+      - 本轮又把 beneficiary 这层信号窄接到了 `safe 4 -> 2` 的 safe route ordering / late exact 入口，并给机会局部 exact 增加了按 `playerId` 共享的 cache
+      - 下一步不是重复补状态，而是继续验证这层 beneficiary ordering 是否值得扩大范围；它仍不适合直接塞进 `evaluateStructure()` 的 hot path
         - 另外，当前 `estimateOpportunityOutcomeValue()` 对经典 handoff 的 `allow / block` 两个 outcome 仍都会给出正分，不能直接拿“纯静态替 exact”来接这层信号
     - 优先补状态抽象缺口，而不是先调一般权重：
       - 本轮已给 `GameData` 增加第一版“结构机会区签名 / critical split zone”信息
       - 已把这类签名并进 `controlFingerprint / route fingerprint`
-      - “最后一个结构机会归属谁 / 被谁拿走 / outcome 对谁有利”现都已有显式摘要；下一步改成把 beneficiary 变成可负担的搜索信号，而不是再加新的 zone 计数
+      - “最后一个结构机会归属谁 / 被谁拿走 / outcome 对谁有利”现都已有显式摘要；其中 owner/handoff 已低成本接进 late eval，下一步改成把 beneficiary 变成可负担的搜索信号，而不是再加新的 zone 计数
     - 在上面这层状态表达落地后，再继续修 exact 内部候选缺口，优先查：
       - 多得分区切换时的 exact prefix 是否漏分支
       - 长链 / 长环 `control` 已补后，是否仍存在更复杂区域的 `leave-control` 断口
@@ -520,16 +522,18 @@
 - 本轮又把 `test_record.md` 末尾补充的特殊情况落成了第二层状态：
   - 新增 `deferredCriticalSplitZoneNum / blockableDeferredCriticalSplitZoneNum`
   - 用于表示“理论上能改无环区域数，但需要同一方连续两手兑现，并且可能被对手一手 sacrifice 封死”的局部
-  - 当前这层信息先并进 `structureOpportunitySignature`，还没有直接进入评估分数
+  - 当前这层原始计数主要并进 `structureOpportunitySignature`；其 owner/handoff 摘要已开始间接进入评估分数
 - 本轮又把 `owner / handoff` 落成了第三层状态：
   - 新增 `currentOwnedOpportunityZoneNum / opponentOwnedOpportunityZoneNum / lastOpportunityOwnerSign`
   - 并补了 `late_structure_opportunity_handoff_after_12_11`，固定“只剩最后一个机会且 action owner 已交给对手”的节点
+  - 本轮已把这层低成本接进 `TreeSearchAI.evaluateStructure()`，在 `safe<=12` 时参与 late eval，且 `safe<=6` 时权重更高
   - 这一层现在已经不是终点；本轮又继续补出了 beneficiary 层
 - 本轮又把 `outcome-beneficiary` 落成了第四层状态：
   - 新增 `lastOpportunityBeneficiarySign`
   - 当前通过 `getStructureOpportunitySummary(null, true)` 显式计算，只在 `safeEdgeCount<=2` 且只剩一个机会区时启用
   - `late_structure_opportunity_handoff_after_12_11` 现固定为 `owner=-1 / beneficiary=-1`
-  - 这层信息目前刻意没有并回常规 `getEvalFeatures()` / `controlFingerprint`，因为直接在主搜索路径里调用会把 `ts_cases.js` 从约 `16s` 拉高到约 `58s`
+  - 本轮已把这层信息窄接到 `safe 4 -> 2` 的 safe route ordering；关键局部里 `[12,11]` 现会排到 `[0,11]` 之前
+  - 这层信息目前仍刻意没有并回常规 `getEvalFeatures()` / `controlFingerprint`；它若要继续扩大，也应优先沿 late exact 入口扩，而不是直接进 `evaluateStructure()` hot path
 - 本轮已把 `6,9 -> 11,8 -> 6,11` 的主样例固定进 `ts_cases.js`：
   - `6,9` 后根选点现固定为 `6,11`
   - `11,8` 后会识别出更多结构机会
@@ -537,7 +541,8 @@
   - `11,8 -> 6,11 -> 10,11 -> 12,11` 后现在已能显式表达“最后一个决定性结构机会的动作控制权和 outcome 受益方都归对手”
 - `late_safe_window_choice` 的代表边已从旧的 `12,3` 切到同指纹的 `11,12`，回归已放宽为等价代表边断言
 - 新 spot check：
-  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前为 `TS 1:0 OK`，平均步数 `69`，约 `44.8s`
+  - `time node ts_cases.js` 当前约 `23.9s`
+  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前为 `TS 1:0 OK`，平均步数 `67`，约 `37.7s`
 - 固定局面样例还缺：
   - 边界链与内部链混合
   - 更强的“最后一个决定性结构机会归属 / 交接”断言
@@ -557,10 +562,11 @@
 - 最新对局分析说明当前更核心的缺口不是一般意义上的 parity 权重，而是“最后一个能改变先后手的结构”没有被当作区域级状态保存：
   - 这一轮已补上第一版 `structure opportunity zone` 的显式表达，并接进了评估和 route fingerprint
   - 这一轮又补上了 `deferred + blockable` 的第二层表达，能区分“理论机会”和“会被一手 sacrifice 封死的机会”
-  - 这一轮又补上了 `owner / handoff` 的第三层表达，已经能区分“动作控制权”是否交接
+  - 这一轮又补上了 `owner / handoff` 的第三层表达，已经能区分“动作控制权”是否交接，并且已低成本接进 late eval
   - 本轮又补上了 `outcome-beneficiary` 的第四层表达，已经能区分“这个最后机会的结果最终对谁有利”
   - 例如 `11,8 -> 6,11 -> 10,11 -> 12,11` 之后，当前实现现已固定识别为“最后一个动作机会归对手，且 outcome 也归对手受益”
-  - 当前真正剩下的不是“有没有这层状态”，而是“如何不靠重复局部 exact，也能把这层信号低成本抬进 late eval / fingerprint”
+  - 本轮又把 beneficiary 窄接进了 `safe 4 -> 2` 的 route ordering，说明这层状态已经开始进入主搜索
+  - 当前真正剩下的不是“有没有这层状态”，而是“是否值得继续把 beneficiary 从 `safe 4 -> 2` 扩到更宽的 late exact 入口，以及怎样控制它的调用成本”
 
 ### 评估函数建议特征
 

@@ -1232,6 +1232,8 @@ GameData.prototype.estimateOpportunityOutcomeValue=function(state, rootPlayerId)
 GameData.prototype.getOpportunityOutcomeValue=function(state, rootPlayerId){
     if(!state)return null
     GameData.__opportunityOutcomeCache=GameData.__opportunityOutcomeCache||{}
+    GameData.__opportunityExactCacheByPlayer=
+        GameData.__opportunityExactCacheByPlayer||{}
     var cacheKey=rootPlayerId+'|'+state.getBoardKey()
     if(GameData.__opportunityOutcomeCache[cacheKey]!=null){
         return GameData.__opportunityOutcomeCache[cacheKey]
@@ -1241,7 +1243,9 @@ GameData.prototype.getOpportunityOutcomeValue=function(state, rootPlayerId){
         var safeEdgeCount=state.countSafeEdges()
         var ai=new TreeSearchAI()
         ai.playerId=rootPlayerId
-        ai.exactEndgameCache={}
+        ai.exactEndgameCache=
+            GameData.__opportunityExactCacheByPlayer[rootPlayerId]||
+            (GameData.__opportunityExactCacheByPlayer[rootPlayerId]={})
         if(!state.edgeCount[state.EDGE_NOT]){
             value=ai.solveExactEndgame(state)
         } else if(safeEdgeCount<=2){
