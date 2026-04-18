@@ -502,6 +502,10 @@
   - `seed=7` 的 `ply=43` 是 `0/0/42` 的纯 sacrifice endgame
   - 该状态当前会生成 `20` 条 exact route
   - `solveLateEndgame()` 单点约跑 `66,971` 个 exact 节点、耗时约 `36s`
+  - 已试过的简单 `generateExactSacrificeRoutes().slice(...)` 限流不可直接采用：
+    - `top 8` 会把该状态从 `win` 剪成 `loss`
+    - `top 12` 会把该状态从 `win` 剪成 `draw`
+    - `top 16` 虽保正确性，但单点仍约 `38s`
   - 说明下一轮应优先针对 exact sacrifice 的排序和分支压缩继续下刀
 
 ### 评估函数建议特征
