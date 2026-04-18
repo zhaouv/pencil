@@ -43,8 +43,12 @@
   - 观测到的单点最大 exact 分支一度可从 `43` 压到 `26`，但最新 spot check 里仍会出现 `40` 路左右的精确状态
   - 当前带 seed 的单局 spot check 仍需几十秒到 `1m30s` 左右，而 `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 当前版本整体仍耗时约 `9m48s`，说明小安全边数 exact 虽已能修输局，但分支压缩仍不够
   - `seed=7` 的旧热点 `ply=43` 已不再是唯一主瓶颈：该状态现已从 `16` 条 exact route、约 `9.3s` 继续压到约 `6.7s`
-  - 当前更值得继续盯的是更早的 `ply=39` 路径：`0/5/40 -> 8,9 -> 0/2/42 -> 10,5/12,9 -> 0/0/42`
-  - 这条路径里的 `0/0/42` pure sacrifice 根当前仍有 `10` 条 exact route，但其非负线 `12,1 / 11,2` 先前会被 exact sacrifice 的局部 `orderBonus` 压后
+  - 当前更值得继续盯的是更早的 `ply=39` 路径：`0/5/40 -> 8,9 -> 0/2/42 -> 10,5 -> 12,9 -> 0/0/42`
+  - 这条路径里的 `0/0/42` pure sacrifice 根，本轮已不再保留“同简单链/环区域的重复 opening”：
+    - simple chain/ring 的 exact sacrifice root 现在会先做代表 opening canonical
+    - `L2` 只保留中间口，`ok` 赢线首手在同区域 canonical 里也会被优先保留
+    - 固定样例 `exact_sacrifice_simple_region_canonicalization` 当前会把 `9,2 / 6,1 / 1,2 / 1,10 / 5,4 / 9,8 / 11,2` 保留为代表，并排除对应边界重复 opening
+    - 同一固定 `0/0/42` 根当前已降到 `4` 条 exact root route，`solveExactEndgame()` 约 `4.5s`
   - 候选生成和评估函数仍然不够贴近 README 里的末盘理论
 - 当前 `ok` 的强度不低。实测 `node aivsai.js -1 ok -2 gr -n 20 -s` 的结果是 `88%` 胜率
 - README 已明确写出 `ok` 的一部分判断是“不够完善的分析”，理论上可以被稳定针对
@@ -100,12 +104,14 @@
         - 只有当 rollout 结果对当前行动方是赢线时，才把 rollout 首手对应的 route 提到前面
         - 这层只影响排序，不替代 exact，也不会把 `ok` rollout 当成胜负证明
         - 已补 `ok_endgame_rollout_ordering` 固定回归，当前会固定把旧 `seed=7 / ply=43` 的首手排成 `7,4`
-      - 本轮还验证过一条更激进的 `forced exact score-prefix canonical` 思路：
-        - `12,1` 与 `11,2`、`3,12` 与 `3,10` 这类 sacrifice 根，确实会在唯一 exact score-prefix 之后汇合到同一局面
-        - 但把这层 canonical 直接接进主线会让整体求解变慢，当前先不合并，后续若再做要先解决计算代价
-      - 下一步不是重复补状态，而是继续验证这层 beneficiary ordering 是否值得扩大范围，并继续沿 `seed=7 / ply=39 -> 0/0/42` 这类慢局压 exact 根；它仍不适合直接塞进 `evaluateStructure()` 的 hot path
-        - 下一轮优先直接生成新的 `seed=7` 录像并按 `EDGE_NOT<=5` 重扫各 ply 的 exact 耗时；在此之前，先沿旧 replay 里仍然最慢的 `ply=39` 继续做子分支 profiling
-        - 如果 `ply=39` 继续证明是主瓶颈，优先检查 `ok rollout` 提示是否需要加更便宜的 gate，而不是默认对所有 `safe=0` 根都启用
+      - 本轮没有继续尝试“score-prefix 后继直接 canonical”，而是把范围收窄到 exact sacrifice root 的 simple region representative：
+        - 只对 simple chain/ring 区域合并 opening，不对有分叉的大区域做“一整个 region 算一支”
+        - `L3` 仍不合并；`L2` 只保留中间口；simple region 若命中 `ok` 赢线首手，则优先保留该 opening
+        - 这层改动已补进 `ts_cases.js`，包括新回归 `exact_sacrifice_simple_region_canonicalization`
+      - 下一步不是继续补新的摘要状态，而是回到 `seed=7 / ply=39` 复核这层 simple-region canonical 的整局收益：
+        - 下一轮优先按旧 replay 重新重扫 `EDGE_NOT<=5`，确认 `ply=39` 是否仍是头号慢点
+        - 如果 `0/0/42` 根已经不再是主瓶颈，就继续拆前面的 `0/5/40 -> 0/2/42`，而不是重复优化更深的 pure sacrifice 根
+        - beneficiary ordering 仍先保持在当前窄接范围，不继续外扩到 `evaluateStructure()` hot path
         - 另外，当前 `estimateOpportunityOutcomeValue()` 对经典 handoff 的 `allow / block` 两个 outcome 仍都会给出正分，不能直接拿“纯静态替 exact”来接这层信号
     - 优先补状态抽象缺口，而不是先调一般权重：
       - 本轮已给 `GameData` 增加第一版“结构机会区签名 / critical split zone”信息

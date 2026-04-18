@@ -582,6 +582,79 @@ var CASES = [
         },
     },
     {
+        name: 'exact_sacrifice_simple_region_canonicalization',
+        xsize: 6,
+        ysize: 6,
+        history: [
+            [1, 0, 0],
+            [2, 3, 1],
+            [0, 1, 0],
+            [12, 11, 1],
+            [0, 3, 0],
+            [3, 8, 1],
+            [4, 3, 0],
+            [1, 12, 1],
+            [3, 0, 0],
+            [11, 0, 1],
+            [10, 1, 0],
+            [2, 11, 1],
+            [5, 0, 0],
+            [12, 5, 1],
+            [7, 0, 0],
+            [8, 1, 1],
+            [8, 3, 0],
+            [10, 3, 1],
+            [0, 5, 0],
+            [11, 12, 1],
+            [4, 5, 0],
+            [7, 12, 1],
+            [12, 3, 0],
+            [5, 8, 1],
+            [6, 5, 0],
+            [12, 7, 1],
+            [5, 2, 0],
+            [0, 9, 1],
+            [1, 8, 0],
+            [6, 9, 1],
+            [3, 6, 0],
+            [4, 11, 1],
+            [0, 7, 0],
+            [9, 10, 1],
+            [5, 12, 0],
+            [8, 7, 1],
+            [9, 12, 0],
+            [10, 7, 1],
+            [7, 6, 0],
+            [8, 9, 1],
+            [10, 5, 0],
+            [12, 9, 1],
+        ],
+        expect: {
+            phase: 'endgame',
+            exactRepresentativeMovesPresent: [
+                [9, 2],
+                [2, 7],
+                [6, 1],
+                [1, 2],
+                [1, 10],
+                [3, 4],
+                [5, 4],
+                [9, 8],
+                [11, 2],
+            ],
+            exactRepresentativeMovesAbsent: [
+                [9, 4],
+                [2, 9],
+                [7, 2],
+                [2, 1],
+                [0, 11],
+                [6, 3],
+                [10, 9],
+                [12, 1],
+            ],
+        },
+    },
+    {
         name: 'small_chain_sacrifice_middle_preference',
         xsize: 6,
         ysize: 6,
@@ -972,12 +1045,20 @@ for (var cc = 0; cc < CASES.length; cc++) {
         var exactPrefixes = null
         var exactRoutes = null
         var okHint = null
+        var exactRepresentatives = null
         if (!gd.edgeCount[gd.EDGE_NOT]) {
             exact = ai.solveExactEndgame(gd)
         }
         if (caseDef.expect.normalPrefixTags || caseDef.expect.exactPrefixTags) {
             normalPrefixes = ai.generateScorePrefixes(gd)
             exactPrefixes = ai.generateExactScorePrefixes(gd)
+        }
+        if (
+            caseDef.expect.exactRepresentativeMovesPresent ||
+            caseDef.expect.exactRepresentativeMovesAbsent
+        ) {
+            okHint = ai.getOkEndgameRolloutHint(gd)
+            exactRepresentatives = ai.getExactSacrificeRepresentativeAnalyses(gd, okHint)
         }
         if (caseDef.expect.exactFirstMove || caseDef.expect.okHintMove) {
             exactRoutes = ai.generateExactRoutes(gd)
@@ -1198,6 +1279,36 @@ for (var cc = 0; cc < CASES.length; cc++) {
                 caseDef.name + ' exact first move mismatch: ' +
                     [exactRoutes[0].moves[0].x, exactRoutes[0].moves[0].y].join(',')
             )
+        }
+        if (caseDef.expect.exactRepresentativeMovesPresent) {
+            var representativeBucket = {}
+            for (var rr = 0; rr < exactRepresentatives.length; rr++) {
+                var presentRep = exactRepresentatives[rr]
+                representativeBucket[[presentRep.edge.x, presentRep.edge.y].join(',')] = true
+            }
+            for (var rp = 0; rp < caseDef.expect.exactRepresentativeMovesPresent.length; rp++) {
+                var presentMove = caseDef.expect.exactRepresentativeMovesPresent[rp]
+                var presentKey = presentMove.join(',')
+                assertCase(
+                    representativeBucket[presentKey],
+                    caseDef.name + ' missing representative move: ' + presentKey
+                )
+            }
+        }
+        if (caseDef.expect.exactRepresentativeMovesAbsent) {
+            var absentBucket = {}
+            for (var ra = 0; ra < exactRepresentatives.length; ra++) {
+                var absentRep = exactRepresentatives[ra]
+                absentBucket[[absentRep.edge.x, absentRep.edge.y].join(',')] = true
+            }
+            for (var ap = 0; ap < caseDef.expect.exactRepresentativeMovesAbsent.length; ap++) {
+                var absentMove = caseDef.expect.exactRepresentativeMovesAbsent[ap]
+                var absentKey = absentMove.join(',')
+                assertCase(
+                    !absentBucket[absentKey],
+                    caseDef.name + ' unexpected representative move: ' + absentKey
+                )
+            }
         }
         if (caseDef.expect.bestMove) {
             assertCase(

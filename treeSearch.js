@@ -853,28 +853,158 @@ TreeSearchAI.prototype.getExactSacrificeBucketKey = function(analysis){
 }
 
 TreeSearchAI.prototype.generateExactSacrificeRoutes = function(gameData){
-    var analyses=gameData.getSacrificeEdgeAnalyses()
-    var routes=[]
-    var bucket={}
     var okHint=this.getOkEndgameRolloutHint(gameData)
+    var analyses=this.getExactSacrificeRepresentativeAnalyses(gameData,okHint)
+    var routes=[]
     for(var ii=0,analysis;analysis=analyses[ii];ii++){
         var route=this.makeRouteFromAnalysis(gameData,analysis,'sacrifice')
-        if(route){
-            route.order=this.getExactSacrificeRouteOrder(route,analysis)
-            route.order+=this.getExactSacrificeOkRouteBonus(gameData,route,okHint)
-            routes.push(route)
-        }
-        var key=this.getExactSacrificeBucketKey(analysis)
-        if(!key || !route)continue
-        if(!bucket[key] || route.order>bucket[key].order){
-            bucket[key]=route
+        if(!route)continue
+        route.order=this.getExactSacrificeRouteOrder(route,analysis)
+        route.order+=this.getExactSacrificeOkRouteBonus(gameData,route,okHint)
+        routes.push(route)
+    }
+    return this.collectRepresentativeRoutes(routes)
+}
+
+TreeSearchAI.prototype.getExactSacrificeRepresentativeKey = function(gameData, analysis){
+    if(
+        analysis &&
+        analysis.regionIndex!=null &&
+        this.shouldGroupExactSacrificeRegion(gameData,analysis)
+    ){
+        return 'region|'+analysis.regionIndex
+    }
+    return 'edge|'+analysis.edgeKey
+}
+
+TreeSearchAI.prototype.getExactSacrificeRepresentativeAnalyses = function(gameData, okHint){
+    var analyses=gameData.getSacrificeEdgeAnalyses()
+    var bucket={}
+    for(var ii=0,analysis;analysis=analyses[ii];ii++){
+        var key=this.getExactSacrificeRepresentativeKey(gameData,analysis)
+        if(!key)continue
+        if(
+            !bucket[key] ||
+            this.compareExactSacrificeRepresentativeAnalyses(
+                gameData,
+                analysis,
+                bucket[key].analysis,
+                okHint
+            )>0
+        ){
+            bucket[key]={
+                analysis:analysis,
+                index:ii,
+            }
         }
     }
     var grouped=[]
     for(var name in bucket){
         grouped.push(bucket[name])
     }
-    return this.collectRepresentativeRoutes(grouped)
+    grouped.sort(function(a,b){
+        return a.index-b.index
+    })
+    var selected=[]
+    for(var jj=0,item;item=grouped[jj];jj++){
+        selected.push(item.analysis)
+    }
+    return selected
+}
+
+TreeSearchAI.prototype.getExactSacrificeRegionTopology = function(gameData, analysis){
+    if(!gameData || !analysis || analysis.regionIndex==null)return null
+    gameData.__exactSacrificeRegionTopologyCache=
+        gameData.__exactSacrificeRegionTopologyCache||{}
+    if(gameData.__exactSacrificeRegionTopologyCache[analysis.regionIndex]){
+        return gameData.__exactSacrificeRegionTopologyCache[analysis.regionIndex]
+    }
+    var region=gameData.connectedRegion[analysis.regionIndex]
+    if(!region || !region.block || !region.block.length){
+        return null
+    }
+    var blockSet={}
+    var directions=[
+        {'x':0,'y':-2},
+        {'x':2,'y':0},
+        {'x':0,'y':2},
+        {'x':-2,'y':0},
+    ]
+    for(var ii=0,pt;pt=region.block[ii];ii++){
+        blockSet[[pt.x,pt.y].join(',')]=true
+    }
+    var maxDegree=0
+    var endpointCount=0
+    for(var jj=0,cell;cell=region.block[jj];jj++){
+        var degree=0
+        for(var kk=0,d;d=directions[kk];kk++){
+            var nearKey=[cell.x+d.x,cell.y+d.y].join(',')
+            if(blockSet[nearKey])degree++
+        }
+        if(degree>maxDegree)maxDegree=degree
+        if(degree===1)endpointCount++
+    }
+    var size=region.block.length
+    var isSimple=
+        size===1 ||
+        (
+            maxDegree<=2 &&
+            (region.isRing?endpointCount===0:endpointCount===2)
+        )
+    var topology={
+        size:size,
+        isRing:!!region.isRing,
+        maxDegree:maxDegree,
+        endpointCount:endpointCount,
+        isSimple:isSimple,
+    }
+    gameData.__exactSacrificeRegionTopologyCache[analysis.regionIndex]=topology
+    return topology
+}
+
+TreeSearchAI.prototype.shouldGroupExactSacrificeRegion = function(gameData, analysis){
+    var topology=this.getExactSacrificeRegionTopology(gameData,analysis)
+    if(!topology || !topology.isSimple)return false
+    if(topology.size===3 && !topology.isRing)return false
+    return true
+}
+
+TreeSearchAI.prototype.getExactSacrificeRegionSharedCellCount = function(gameData, analysis){
+    if(!gameData || !analysis || analysis.regionIndex==null)return 0
+    var region=gameData.connectedRegion[analysis.regionIndex]
+    if(!region || !region.block || !region.block.length)return 0
+    var blockSet={}
+    for(var ii=0,pt;pt=region.block[ii];ii++){
+        blockSet[[pt.x,pt.y].join(',')]=true
+    }
+    var adjacent=gameData.getAdjacentCellsFromEdge(analysis.edge)
+    var count=0
+    for(var jj=0,cell;cell=adjacent[jj];jj++){
+        if(blockSet[[cell.x,cell.y].join(',')])count++
+    }
+    return count
+}
+
+TreeSearchAI.prototype.compareExactSacrificeRepresentativeAnalyses = function(
+    gameData,
+    analysisA,
+    analysisB,
+    okHint
+){
+    if(okHint && okHint.currentPlayerWin){
+        var matchA=analysisA.edgeKey===okHint.moveKey?1:0
+        var matchB=analysisB.edgeKey===okHint.moveKey?1:0
+        if(matchA!==matchB)return matchA-matchB
+    }
+    var topology=this.getExactSacrificeRegionTopology(gameData,analysisA)
+    if(topology && topology.isSimple){
+        if(topology.isRing || topology.size===1)return 0
+        var sharedA=this.getExactSacrificeRegionSharedCellCount(gameData,analysisA)
+        var sharedB=this.getExactSacrificeRegionSharedCellCount(gameData,analysisB)
+        if(sharedA!==sharedB)return sharedA-sharedB
+        return 0
+    }
+    return 0
 }
 
 TreeSearchAI.prototype.getOkEndgameRolloutHint = function(gameData){

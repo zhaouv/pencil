@@ -30,7 +30,7 @@
   - `TreeSearchAI` 的实验性搜索实现。
   - 当前版本使用 clone-based 回合级路线搜索、alpha-beta、迭代加深、TT、结构评估和无安全步精确收官求解。
   - 已能稳定生成“全吃 / 留最后一口 / 双格链让分 / 四环让分”这类基础路线，并带有“连续无关步快进”和收官延伸搜索骨架。
-  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错、一个根结点让分被普通候选上限截断、一个“小得分区存在 `EDGE_NOW` 但 score route 为空”的候选缺口、一个 live `scoreRegion` 漂移导致 exact score route 直接为空的查询缺口，以及“长链 / 长环只会在 `chain2 / ring4` 才生成 `score-control`”的枚举缺口；本轮又把“小安全边数 late endgame”正式接进 `searchState / searchQuiescence`，当前精确窗口为 `EDGE_NOT <= 5`，补了“小链让分时优先选中间边而不是边界边”的 tie-break，把结构机会的 `owner / handoff` 摘要低成本接进了 `evaluateStructure()`，把 beneficiary 窄接到了 `safe 4 -> 2` 的 safe route ordering，并把 exact sacrifice bucket 的几何方向 `h / v` 从 key 里去掉做保守压缩，但强度和性能仍未达标。
+  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错、一个根结点让分被普通候选上限截断、一个“小得分区存在 `EDGE_NOW` 但 score route 为空”的候选缺口、一个 live `scoreRegion` 漂移导致 exact score route 直接为空的查询缺口，以及“长链 / 长环只会在 `chain2 / ring4` 才生成 `score-control`”的枚举缺口；本轮又把“小安全边数 late endgame”正式接进 `searchState / searchQuiescence`，当前精确窗口为 `EDGE_NOT <= 5`，补了“小链让分时优先选中间边而不是边界边”的 tie-break，把结构机会的 `owner / handoff` 摘要低成本接进了 `evaluateStructure()`，把 beneficiary 窄接到了 `safe 4 -> 2` 的 safe route ordering，并在 `safe=0` 的 exact sacrifice root 上新增 simple chain/ring representative canonical：只对简单链/环合并 opening，`L2` 只保留中间口，且若命中 `ok` 赢线首手会优先保留该 opening；强度和性能仍未达标。
 - `server.js`
   - `socket.io` 对战服务器，默认监听 `5050`。
   - 管理随机匹配、指定房间、观战和棋谱广播。
@@ -100,6 +100,7 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - 其中 `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
   - 其中 `late_safe_window_choice` 当前会固定选出 `11,12`（同指纹等价代表边）
   - 其中 `late_structure_opportunity_handoff_after_12_11` 当前会固定识别为 `lastOpportunityOwnerSign=-1 / lastOpportunityBeneficiarySign=-1`
+  - 其中 `exact_sacrifice_simple_region_canonicalization` 当前会固定保留 `9,2 / 6,1 / 1,2 / 1,10 / 5,4 / 9,8 / 11,2` 这类 simple-region 代表 opening，并排除对应边界重复 opening
   - 其中 `small_chain_sacrifice_middle_preference` 当前会固定选出 `11,6`
   - 其中 `score_then_small_chain_middle_route` 当前会固定生成 `3,12 -> 11,6`
 - `exact_score_prefix_control_only` 当前会固定保持：
@@ -119,6 +120,8 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `1:0`，平均步数 `80`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 8` 为 `1:0`，平均步数 `72`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`，平均步数 `71`
+  - 当前 `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 约 `17.7s`
+  - 当前 `time node ts_cases.js` 约 `25.3s`
 - 已验证短样本基准：
   - 上一轮 2+2 自定义短样本基线为：
     - `ts vs ok` 为 `1:3`
@@ -162,16 +165,21 @@ node aivsai.js -1 ts -2 ok -n 5 -s
 - 但候选较多的收官局面仍会明显变慢
 - 本轮已补 exact TT，并把部分状态的最大 exact 分支从 `43` 压到 `26`
 - 本轮又补了根结点无安全步直切 exact 路线集、小得分区 score route 兜底、live `scoreRegion` 实时扫描、长链 / 长环 `score-control` prefix，以及 `EDGE_NOT<=5` 的小安全边数 exact 窗口；当前带 seed 的单局 spot check 仍需几十秒到 `1m30s` 左右，而 `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 整体仍耗时约 `9m48s`
-- `seed=7` 的旧热点 `ply=43` 已明显缓和：该状态当前已压到 `16` 条 exact route，单点约 `6.7s`
+- `seed=7` 的旧热点 `ply=43` 已明显缓和：该状态当前已压到 `16` 条 exact route，单点约 `4.3s`
 - 当前更关键的慢局路径前移到了 `seed=7` 的 `ply=39 -> 0/0/42`：
   - `ply=39` 会沿 `8,9 -> 0/2/42 -> 10,5/12,9 -> 0/0/42` 进入新的 pure sacrifice 根
-  - 这个 `0/0/42` 根当前仍有 `10` 条 exact route，且真正不差的 `12,1 / 11,2` 先前会被大 sacrifice 的局部 `orderBonus` 压后
-- 本轮已先在固定收官样例上验证一层保守压缩：
+  - 本轮在固定 `0/0/42` 样例上已把 simple chain/ring 的重复 opening 折成代表 opening：
+    - `L2` 只保留中间口
+    - simple region 若命中 `ok` 赢线首手，则保留该首手
+    - 同一样例当前已降到 `4` 条 exact root route，整点 exact 约 `4.5s`
+  - 但这还只是子分支样例；旧 replay 还没有按新代码完整重扫，所以 `ply=39` 是否仍是头号热点还需要重新确认
+  - 本轮已先在固定收官样例上验证两层压缩：
   - `getExactSacrificeBucketKey()` 现忽略几何方向 `h / v`
   - `exact_root_sacrifice_choice` 的 exact 根节点从 `20` 降到 `16`
   - `ring4_sacrifice_choice` 的 exact 根节点从 `10` 降到 `8`
-  - `node ts_cases.js` 当前约 `19.3s`
-  - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前约 `26.7s`
+  - simple chain/ring 的 exact sacrifice root 现会先做 representative canonical，并在 `L2` 上只保留中间口
+  - `node ts_cases.js` 当前约 `25.3s`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前约 `17.7s`
 - 本轮又继续回到该慢局路径本身复核：
   - `seed=7 / ply=43` 的旧 pure sacrifice 热点现已从约 `36s` 进一步降到约 `4.3s`
   - `generateExactSacrificeRoutes()` 现在只会对 `regionSize>2` 的大 sacrifice 去掉局部 `orderBonus`
