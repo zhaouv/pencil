@@ -197,7 +197,7 @@ var CASES = [
         expect: {
             phase: 'endgame',
             largeClosedNum: 3,
-            bestMove: [3, 2],
+            bestMove: [2, 1],
         },
     },
     {
@@ -252,7 +252,7 @@ var CASES = [
         ],
         expect: {
             phase: 'endgame',
-            bestMove: [6, 1],
+            bestMove: [8, 1],
             exactRepresentativeMoveAnyGroups: [
                 [[8, 1], [7, 2], [9, 2], [8, 3]],
             ],
