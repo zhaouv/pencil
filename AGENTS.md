@@ -155,6 +155,7 @@ node aivsai.js -1 ts -2 ok -n 5 -s
 - 但候选较多的收官局面仍会明显变慢
 - 本轮已补 exact TT，并把部分状态的最大 exact 分支从 `43` 压到 `26`
 - 本轮又补了根结点无安全步直切 exact 路线集、小得分区 score route 兜底、live `scoreRegion` 实时扫描、长链 / 长环 `score-control` prefix，以及 `EDGE_NOT<=5` 的小安全边数 exact 窗口；当前带 seed 的单局 spot check 仍需几十秒到 `1m30s` 左右，而 `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 整体仍耗时约 `9m48s`
+- 当前已定位出的最新慢局热点是 `seed=7` 的 `ply=43`：该状态进入 `0/0/42` 的纯 sacrifice endgame 后仍有 `20` 条 exact route，`solveLateEndgame()` 单点约跑 `66,971` 个 exact 节点、耗时约 `36s`
 - 旧的 `seed=8` 固定输局已在本轮翻成赢局，但这并不代表 exact 内部候选已经完整；整局里仍会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩，并重新扫描新的稳定输局样本
 - 更大样本 benchmark 依然不适合直接放大
 - 后续如果要继续提胜率，必须同时优化：
