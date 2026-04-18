@@ -461,6 +461,8 @@ var CASES = [
             minControlSwing: 1,
             maxControlSwing: 1,
             maxCriticalSplitZones: 1,
+            minDeferredCriticalSplitZones: 1,
+            minBlockableDeferredCriticalSplitZones: 1,
             lastCriticalSplitZone: 1,
         },
     },
@@ -831,6 +833,10 @@ for (var cc = 0; cc < CASES.length; cc++) {
         if (
             caseDef.expect.minCriticalSplitZones != null ||
             caseDef.expect.maxCriticalSplitZones != null ||
+            caseDef.expect.minDeferredCriticalSplitZones != null ||
+            caseDef.expect.maxDeferredCriticalSplitZones != null ||
+            caseDef.expect.minBlockableDeferredCriticalSplitZones != null ||
+            caseDef.expect.maxBlockableDeferredCriticalSplitZones != null ||
             caseDef.expect.lastCriticalSplitZone != null ||
             caseDef.expect.structureOpportunitySignature != null
         ) {
@@ -916,6 +922,38 @@ for (var cc = 0; cc < CASES.length; cc++) {
                 features.lastCriticalSplitZone === caseDef.expect.lastCriticalSplitZone,
                 caseDef.name + ' lastCriticalSplitZone mismatch: ' +
                     features.lastCriticalSplitZone
+            )
+        }
+        if (caseDef.expect.minDeferredCriticalSplitZones != null) {
+            assertCase(
+                explicitOpportunity.deferredCriticalSplitZoneNum >=
+                    caseDef.expect.minDeferredCriticalSplitZones,
+                caseDef.name + ' deferredCriticalSplitZoneNum too small: ' +
+                    explicitOpportunity.deferredCriticalSplitZoneNum
+            )
+        }
+        if (caseDef.expect.maxDeferredCriticalSplitZones != null) {
+            assertCase(
+                explicitOpportunity.deferredCriticalSplitZoneNum <=
+                    caseDef.expect.maxDeferredCriticalSplitZones,
+                caseDef.name + ' deferredCriticalSplitZoneNum too large: ' +
+                    explicitOpportunity.deferredCriticalSplitZoneNum
+            )
+        }
+        if (caseDef.expect.minBlockableDeferredCriticalSplitZones != null) {
+            assertCase(
+                explicitOpportunity.blockableDeferredCriticalSplitZoneNum >=
+                    caseDef.expect.minBlockableDeferredCriticalSplitZones,
+                caseDef.name + ' blockableDeferredCriticalSplitZoneNum too small: ' +
+                    explicitOpportunity.blockableDeferredCriticalSplitZoneNum
+            )
+        }
+        if (caseDef.expect.maxBlockableDeferredCriticalSplitZones != null) {
+            assertCase(
+                explicitOpportunity.blockableDeferredCriticalSplitZoneNum <=
+                    caseDef.expect.maxBlockableDeferredCriticalSplitZones,
+                caseDef.name + ' blockableDeferredCriticalSplitZoneNum too large: ' +
+                    explicitOpportunity.blockableDeferredCriticalSplitZoneNum
             )
         }
         if (caseDef.expect.structureOpportunitySignature != null) {
