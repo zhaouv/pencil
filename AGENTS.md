@@ -30,7 +30,7 @@
   - `TreeSearchAI` 的实验性搜索实现。
   - 当前版本使用 clone-based 回合级路线搜索、alpha-beta、迭代加深、TT、结构评估和无安全步精确收官求解。
   - 已能稳定生成“全吃 / 留最后一口 / 双格链让分 / 四环让分”这类基础路线，并带有“连续无关步快进”和收官延伸搜索骨架。
-  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错、一个根结点让分被普通候选上限截断、一个“小得分区存在 `EDGE_NOW` 但 score route 为空”的候选缺口、一个 live `scoreRegion` 漂移导致 exact score route 直接为空的查询缺口，以及“长链 / 长环只会在 `chain2 / ring4` 才生成 `score-control`”的枚举缺口；本轮又把“小安全边数 late endgame”正式接进 `searchState / searchQuiescence`，当前精确窗口为 `EDGE_NOT <= 5`，补了“小链让分时优先选中间边而不是边界边”的 tie-break，把结构机会的 `owner / handoff` 摘要低成本接进了 `evaluateStructure()`，把 beneficiary 窄接到了 `safe 4 -> 2` 的 safe route ordering，并在 `safe=0` 的 exact sacrifice root 上新增 simple 闭区域 representative canonical：只对 simple chain/ring 闭区域合并 opening，只有 `L2` 强制中间口，其它 `L1 / L3 / R4 ...` 都只留一个代表；若命中 `ok` 赢线首手则优先保留该 opening；强度和性能仍未达标。
+  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错、一个根结点让分被普通候选上限截断、一个“小得分区存在 `EDGE_NOW` 但 score route 为空”的候选缺口、一个 live `scoreRegion` 漂移导致 exact score route 直接为空的查询缺口，以及“长链 / 长环只会在 `chain2 / ring4` 才生成 `score-control`”的枚举缺口；本轮又把“小安全边数 late endgame”正式接进 `searchState / searchQuiescence`，当前精确窗口为 `EDGE_NOT <= 5`，补了“小链让分时优先选中间边而不是边界边”的 tie-break，把结构机会的 `owner / handoff` 摘要低成本接进了 `evaluateStructure()`，把 beneficiary 窄接到了 `safe 4 -> 2` 的 safe route ordering，并在 `safe=0` 的 exact sacrifice root 上新增 simple 闭区域 representative canonical：对 simple chain/ring 闭区域统一只保留按扫描顺序的“第二条边”作为代表；若命中 `ok` 赢线首手，则该闭区域的代表边会整体获得排序加成；强度和性能仍未达标。
 - `server.js`
   - `socket.io` 对战服务器，默认监听 `5050`。
   - 管理随机匹配、指定房间、观战和棋谱广播。
@@ -101,7 +101,7 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - 其中 `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
   - 其中 `late_safe_window_choice` 当前会固定选出 `11,12`（同指纹等价代表边）
   - 其中 `late_structure_opportunity_handoff_after_12_11` 当前会固定识别为 `lastOpportunityOwnerSign=-1 / lastOpportunityBeneficiarySign=-1`
-  - 其中 `exact_sacrifice_simple_region_canonicalization` 当前会固定保留 `L2` 的中间 opening，并保证 `L4` 这类 simple 闭区域只保留一个代表 opening
+  - 其中 `exact_sacrifice_simple_region_canonicalization` 当前会固定体现“simple 闭区域统一只保留第二条边代表”
   - 其中 `small_chain_sacrifice_middle_preference` 当前会固定选出 `11,6`
   - 其中 `score_then_small_chain_middle_route` 当前会固定生成 `3,12 -> 11,6`
 - `exact_score_prefix_control_only` 当前会固定保持：
@@ -173,9 +173,9 @@ node aivsai.js -1 ts -2 ok -n 5 -s
 - 当前更关键的慢局路径前移到了 `seed=7` 的 `ply=39 -> 0/0/42`：
   - `ply=39` 会沿 `8,9 -> 0/2/42 -> 10,5/12,9 -> 0/0/42` 进入新的 pure sacrifice 根
   - 本轮在固定 `0/0/42` 样例上已把 simple chain/ring 的重复 opening 折成代表 opening：
-    - `L2` 只保留中间口
-    - simple region 若命中 `ok` 赢线首手，则保留该首手
-    - 同一样例当前已降到 `4` 条 exact root route，整点 exact 约 `4.5s`
+    - simple 闭区域统一只保留第二条边
+    - simple region 若命中 `ok` 赢线首手，则对应代表边会获得排序加成
+    - 同一样例当前为 `14` 个闭区域代表 opening，进一步按后继 fingerprint 压成 `5` 条 exact root route
   - post-commit 已按“旧 replay + 当前代码 + 每个状态独立 new TreeSearchAI”重扫 `EDGE_NOT<=5`：
     - `ply=39` 仍是头号慢点，但约 `1.8s`
     - `ply=40~43` 当前约 `1.1s ~ 1.7s`
@@ -188,7 +188,7 @@ node aivsai.js -1 ts -2 ok -n 5 -s
   - `getExactSacrificeBucketKey()` 现忽略几何方向 `h / v`
   - `exact_root_sacrifice_choice` 的 exact 根节点从 `20` 降到 `16`
   - `ring4_sacrifice_choice` 的 exact 根节点从 `10` 降到 `8`
-  - simple 闭区域的 exact sacrifice root 现会先做 representative canonical，并只在 `L2` 上强制保留中间口
+  - simple 闭区域的 exact sacrifice root 现会先做 representative canonical，并统一只保留第二条边
   - `node ts_cases.js` 当前约 `25.3s`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前约 `17.7s`
 - 本轮又继续回到该慢局路径本身复核：
@@ -196,8 +196,8 @@ node aivsai.js -1 ts -2 ok -n 5 -s
   - `generateExactSacrificeRoutes()` 现在只会对 `regionSize>2` 的大 sacrifice 去掉局部 `orderBonus`
   - 小链中间口回归 `small_chain_sacrifice_middle_preference` / `score_then_small_chain_middle_route` 仍保持通过
   - `safe=0` 的 `generateExactSacrificeRoutes()` 现在还会先跑一遍确定性的 `OffensiveKeeperAI` rollout；只有当 rollout 对当前行动方是赢线时，才把 rollout 首手对应的 route 提到前面
-  - 已补 `ok_endgame_rollout_ordering` 固定回归，当前会固定把旧 `seed=7 / ply=43` 的首手排成 `7,4`
-  - `seed=7` 的 `0/0/42` pure sacrifice 根现会把 `12,1 / 11,2` 提前到前排，随后 `safe=0` 根还会优先尝试 `ok` rollout 的赢线首手
+  - 已补 `ok_endgame_rollout_ordering` 固定回归，当前会固定把旧 `seed=7 / ply=43` 的首手排成 `8,5`，也就是 `ok` 赢线所在闭区域的代表边
+  - `seed=7` 的 `0/0/42` pure sacrifice 根当前有 `14` 个闭区域代表 opening，并会进一步压成 `5` 条 exact root route；`safe=0` 根仍会优先尝试 `ok` rollout 的赢线所在闭区域
   - 已验证 `12,1 / 11,2`、`3,12 / 3,10` 这类根 sacrifice 会在唯一 exact score-prefix 后汇合，但直接把这层 canonical 接进主线会让整体求解变慢，当前先不合并
   - post-commit 复跑 `time node aivsai.js -1 ts -2 ok -n 1 --seed 7 -o /tmp/pencil_seed7_after8733ee9.json` 在约 `2m24s` 仍未自然结束，已手动停止；说明整局层面还有后续慢点
   - 已按“旧 replay + 当前代码”重扫 `EDGE_NOT<=5` 的所有 ply：

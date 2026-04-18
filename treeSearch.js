@@ -854,7 +854,7 @@ TreeSearchAI.prototype.getExactSacrificeBucketKey = function(analysis){
 
 TreeSearchAI.prototype.generateExactSacrificeRoutes = function(gameData){
     var okHint=this.getOkEndgameRolloutHint(gameData)
-    var analyses=this.getExactSacrificeRepresentativeAnalyses(gameData,okHint)
+    var analyses=this.getExactSacrificeRepresentativeAnalyses(gameData)
     var routes=[]
     for(var ii=0,analysis;analysis=analyses[ii];ii++){
         var route=this.makeRouteFromAnalysis(gameData,analysis,'sacrifice')
@@ -888,8 +888,7 @@ TreeSearchAI.prototype.getExactSacrificeRepresentativeAnalyses = function(gameDa
             this.compareExactSacrificeRepresentativeAnalyses(
                 gameData,
                 analysis,
-                bucket[key].analysis,
-                okHint
+                bucket[key].analysis
             )>0
         ){
             bucket[key]={
@@ -962,6 +961,35 @@ TreeSearchAI.prototype.getExactSacrificeRegionTopology = function(gameData, anal
     return topology
 }
 
+TreeSearchAI.prototype.getExactSacrificeRegionCanonicalEdgeKey = function(gameData, analysis){
+    if(!gameData || !analysis || analysis.regionIndex==null)return null
+    gameData.__exactSacrificeRegionCanonicalEdgeKeyCache=
+        gameData.__exactSacrificeRegionCanonicalEdgeKeyCache||{}
+    if(
+        Object.prototype.hasOwnProperty.call(
+            gameData.__exactSacrificeRegionCanonicalEdgeKeyCache,
+            analysis.regionIndex
+        )
+    ){
+        return gameData.__exactSacrificeRegionCanonicalEdgeKeyCache[analysis.regionIndex]
+    }
+    var regionEdges=[]
+    var analyses=gameData.getSacrificeEdgeAnalyses()
+    for(var ii=0,item;item=analyses[ii];ii++){
+        if(item.regionIndex!==analysis.regionIndex)continue
+        regionEdges.push(item.edgeKey)
+    }
+    regionEdges.sort(function(a,b){
+        var aa=a.split(',').map(function(v){return +v})
+        var bb=b.split(',').map(function(v){return +v})
+        if(aa[1]!==bb[1])return aa[1]-bb[1]
+        return aa[0]-bb[0]
+    })
+    var canonicalKey=regionEdges.length>1?regionEdges[1]:regionEdges[0]
+    gameData.__exactSacrificeRegionCanonicalEdgeKeyCache[analysis.regionIndex]=canonicalKey||null
+    return canonicalKey||null
+}
+
 TreeSearchAI.prototype.shouldGroupExactSacrificeRegion = function(gameData, analysis){
     var topology=this.getExactSacrificeRegionTopology(gameData,analysis)
     if(!topology || !topology.isSimple)return false
@@ -987,20 +1015,14 @@ TreeSearchAI.prototype.getExactSacrificeRegionSharedCellCount = function(gameDat
 TreeSearchAI.prototype.compareExactSacrificeRepresentativeAnalyses = function(
     gameData,
     analysisA,
-    analysisB,
-    okHint
+    analysisB
 ){
-    if(okHint && okHint.currentPlayerWin){
-        var matchA=analysisA.edgeKey===okHint.moveKey?1:0
-        var matchB=analysisB.edgeKey===okHint.moveKey?1:0
-        if(matchA!==matchB)return matchA-matchB
-    }
     var topology=this.getExactSacrificeRegionTopology(gameData,analysisA)
     if(topology && topology.isSimple){
-        if(topology.isRing || topology.size!==2)return 0
-        var sharedA=this.getExactSacrificeRegionSharedCellCount(gameData,analysisA)
-        var sharedB=this.getExactSacrificeRegionSharedCellCount(gameData,analysisB)
-        if(sharedA!==sharedB)return sharedA-sharedB
+        var canonicalKey=this.getExactSacrificeRegionCanonicalEdgeKey(gameData,analysisA)
+        var matchA=analysisA.edgeKey===canonicalKey?1:0
+        var matchB=analysisB.edgeKey===canonicalKey?1:0
+        if(matchA!==matchB)return matchA-matchB
         return 0
     }
     return 0
@@ -1070,7 +1092,17 @@ TreeSearchAI.prototype.getExactSacrificeOkRouteBonus = function(gameData, route,
         !route.moves.length
     )return 0
     var move=route.moves[0]
-    if([move.x,move.y].join(',')!==okHint.moveKey)return 0
+    var moveKey=[move.x,move.y].join(',')
+    if(moveKey!==okHint.moveKey){
+        var analysis=route.analysis
+        if(
+            !analysis ||
+            analysis.regionIndex==null ||
+            !this.shouldGroupExactSacrificeRegion(gameData,analysis)
+        )return 0
+        var regionIndices=gameData.getEdgeRegionIndices(okHint.move)
+        if(regionIndices.indexOf(analysis.regionIndex)===-1)return 0
+    }
     return (gameData.playerId===this.playerId?1:-1)*this.OK_ENDGAME_ROUTE_BONUS
 }
 

@@ -47,10 +47,10 @@
   - 当前更值得继续盯的是更早的 `ply=39` 路径：`0/5/40 -> 8,9 -> 0/2/42 -> 10,5 -> 12,9 -> 0/0/42`
   - 这条路径里的 `0/0/42` pure sacrifice 根，本轮已不再保留“同 simple 闭区域的重复 opening”：
     - exact sacrifice root 现在会先按 simple chain/ring 闭区域做代表 opening canonical
-    - 只有 `L2` 强制保留中间口；`L1 / L3 / R4` 等其它 simple 闭区域只取一个代表
-    - `ok` 赢线首手若落在同一区域 canonical 内，也会被优先保留
-    - 固定样例 `exact_sacrifice_simple_region_canonicalization` 当前会把 `9,2 / 6,1 / 1,2 / 1,10 / 5,4 / 9,8 / 11,2` 保留为代表，并排除对应边界重复 opening
-    - 同一固定 `0/0/42` 根当前已降到 `4` 条 exact root route，`solveExactEndgame()` 约 `4.5s`
+    - 当前规则已改成：simple 闭区域统一只保留按扫描顺序的第二条边
+    - `ok` 赢线首手若落在该闭区域内，则对应代表边会获得排序加成
+    - 固定样例 `exact_sacrifice_simple_region_canonicalization` 当前会体现这条“统一第二条边”的规则
+    - 同一固定 `0/0/42` 根当前为 `14` 个闭区域代表 opening，进一步按后继 fingerprint 压成 `5` 条 exact root route
   - 候选生成和评估函数仍然不够贴近 README 里的末盘理论
 - 当前 `ok` 的强度不低。实测 `node aivsai.js -1 ok -2 gr -n 20 -s` 的结果是 `88%` 胜率
 - README 已明确写出 `ok` 的一部分判断是“不够完善的分析”，理论上可以被稳定针对
@@ -103,17 +103,16 @@
         - 同一热点状态上，`solveLateEndgame()` 已从约 `36s` 降到约 `9.3s`
       - 本轮又补了一层更窄的 exact sacrifice 排序修正：
         - `generateExactSacrificeRoutes()` 现在只会对 `regionSize>2` 的大 sacrifice 去掉局部 `orderBonus`
-        - 小链中间口回归 `small_chain_sacrifice_middle_preference` / `score_then_small_chain_middle_route` 仍保持通过
-        - `seed=7` 的 `0/0/42` pure sacrifice 根现会把 `12,1 / 11,2` 提前到前排
-        - 同一根状态上的 `solveLateEndgame()` 约从 `26.0s` 降到 `23.7s`
+        - `small_chain_sacrifice_middle_preference` / `score_then_small_chain_middle_route` 仍保持通过
+        - 后续又把 simple 闭区域 canonical 改成“统一第二条边”，不再只对 `L2` 单独特判
       - 本轮又把 `ok` 的无安全边收官逻辑接成了 exact sacrifice 的排序提示：
         - `safe=0` 的 `generateExactSacrificeRoutes()` 现在会先跑一遍确定性的 `OffensiveKeeperAI` rollout
         - 只有当 rollout 结果对当前行动方是赢线时，才把 rollout 首手对应的 route 提到前面
         - 这层只影响排序，不替代 exact，也不会把 `ok` rollout 当成胜负证明
-        - 已补 `ok_endgame_rollout_ordering` 固定回归，当前会固定把旧 `seed=7 / ply=43` 的首手排成 `7,4`
+        - 已补 `ok_endgame_rollout_ordering` 固定回归，当前会固定把旧 `seed=7 / ply=43` 的首手排成 `8,5`，即 `ok` 赢线所在闭区域的代表边
       - 本轮没有继续尝试“score-prefix 后继直接 canonical”，而是把范围收窄到 exact sacrifice root 的 simple region representative：
         - 只对 simple chain/ring 闭区域合并 opening，不对有分叉的大区域做“一整个 region 算一支”
-        - 当前规则已改成：只有 `L2` 只保留中间口；其它 simple 闭区域都只取一个代表；simple region 若命中 `ok` 赢线首手，则优先保留该 opening
+        - 当前规则已改成：simple 闭区域统一只保留第二条边；simple region 若命中 `ok` 赢线首手，则对应代表边获得排序加成
         - 这层改动已补进 `ts_cases.js`，包括新回归 `exact_sacrifice_simple_region_canonicalization`
       - 下一步不是继续补新的摘要状态，而是把 profiling 入口从“旧 replay 的 0safe 根”切到“当前代码实际走出的新整局热点”：
         - 旧 replay 的 `ply=39 -> 0/0/42` 已被压到秒级，不再值得继续深挖同一类 pure sacrifice 根
@@ -600,7 +599,9 @@
   - 该状态旧记录为 `20` 条 exact route、`solveLateEndgame()` 约 `36s`
   - 当前版本已把它压到 `16` 条 exact route、单点约 `4.3s`
   - 但热点已经前移到 `ply=39 -> 0/0/42` 这条路径，本轮进一步确认真正拖慢的是大链 sacrifice 根的排序
-  - 对应的 `0/0/42` pure sacrifice 根当前仍有 `10` 条 exact route，但 `12,1 / 11,2` 两条非负线已被提到前排，随后 `safe=0` 根还会优先尝试 `ok` rollout 的赢线首手
+  - 对应的 `0/0/42` pure sacrifice 根现在应区分两层：
+    - simple 闭区域代表 opening 当前有 `14` 个
+    - 再按后继 fingerprint 压缩后，exact root route 当前是 `5` 条
   - 已验证某些 root sacrifice 会在唯一 exact score-prefix 后汇合到同一后继，但直接 canonical 仍太贵，先记为下一步优化方向
   - 整局 `seed=7` 仍未重新完整复测，说明当前还不能把这次局部压缩等同于“整局已修完”
   - post-commit 复跑 `time node aivsai.js -1 ts -2 ok -n 1 --seed 7 -o /tmp/pencil_seed7_after8733ee9.json` 在约 `2m24s` 仍未自然结束，已手动停止；说明这次提交确实没把整局主热点清空
@@ -612,7 +613,7 @@
     - `top 8` 会把该状态从 `win` 剪成 `loss`
     - `top 12` 会把该状态从 `win` 剪成 `draw`
     - `top 16` 虽保正确性，但单点仍约 `38s`
-- 已补一个来自 `test_record.md` 的稳定让分回归：在 `L2` / `L4` 同值时，当前会优先选 `L2` 的中间边，而不是把 `L4` 或边界边排到前面
+- 已补一个来自 `test_record.md` 的稳定让分回归：`L2` 相关两手路线当前仍会固定生成 `3,12 -> 11,6`
 - 已补一个来自 `test_record.md` 的组合路线回归：`score-all+sacrifice` 现在会保留 continuation 的让分排序，不再把 `3,12 -> 9,12` 这种次优第二手缓存进 `routePlan`
 - 最新对局分析说明当前更核心的缺口不是一般意义上的 parity 权重，而是“最后一个能改变先后手的结构”没有被当作区域级状态保存：
   - 这一轮已补上第一版 `structure opportunity zone` 的显式表达，并接进了评估和 route fingerprint
