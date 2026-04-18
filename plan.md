@@ -45,9 +45,10 @@
   - 当前带 seed 的单局 spot check 仍需几十秒到 `1m30s` 左右，而 `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 当前版本整体仍耗时约 `9m48s`，说明小安全边数 exact 虽已能修输局，但分支压缩仍不够
   - `seed=7` 的旧热点 `ply=43` 已不再是唯一主瓶颈：该状态现已从 `16` 条 exact route、约 `9.3s` 继续压到约 `6.7s`
   - 当前更值得继续盯的是更早的 `ply=39` 路径：`0/5/40 -> 8,9 -> 0/2/42 -> 10,5 -> 12,9 -> 0/0/42`
-  - 这条路径里的 `0/0/42` pure sacrifice 根，本轮已不再保留“同简单链/环区域的重复 opening”：
-    - simple chain/ring 的 exact sacrifice root 现在会先做代表 opening canonical
-    - `L2` 只保留中间口，`ok` 赢线首手在同区域 canonical 里也会被优先保留
+  - 这条路径里的 `0/0/42` pure sacrifice 根，本轮已不再保留“同 simple 闭区域的重复 opening”：
+    - exact sacrifice root 现在会先按 simple chain/ring 闭区域做代表 opening canonical
+    - 只有 `L2` 强制保留中间口；`L1 / L3 / R4` 等其它 simple 闭区域只取一个代表
+    - `ok` 赢线首手若落在同一区域 canonical 内，也会被优先保留
     - 固定样例 `exact_sacrifice_simple_region_canonicalization` 当前会把 `9,2 / 6,1 / 1,2 / 1,10 / 5,4 / 9,8 / 11,2` 保留为代表，并排除对应边界重复 opening
     - 同一固定 `0/0/42` 根当前已降到 `4` 条 exact root route，`solveExactEndgame()` 约 `4.5s`
   - 候选生成和评估函数仍然不够贴近 README 里的末盘理论
@@ -111,8 +112,8 @@
         - 这层只影响排序，不替代 exact，也不会把 `ok` rollout 当成胜负证明
         - 已补 `ok_endgame_rollout_ordering` 固定回归，当前会固定把旧 `seed=7 / ply=43` 的首手排成 `7,4`
       - 本轮没有继续尝试“score-prefix 后继直接 canonical”，而是把范围收窄到 exact sacrifice root 的 simple region representative：
-        - 只对 simple chain/ring 区域合并 opening，不对有分叉的大区域做“一整个 region 算一支”
-        - `L3` 仍不合并；`L2` 只保留中间口；simple region 若命中 `ok` 赢线首手，则优先保留该 opening
+        - 只对 simple chain/ring 闭区域合并 opening，不对有分叉的大区域做“一整个 region 算一支”
+        - 当前规则已改成：只有 `L2` 只保留中间口；其它 simple 闭区域都只取一个代表；simple region 若命中 `ok` 赢线首手，则优先保留该 opening
         - 这层改动已补进 `ts_cases.js`，包括新回归 `exact_sacrifice_simple_region_canonicalization`
       - 下一步不是继续补新的摘要状态，而是把 profiling 入口从“旧 replay 的 0safe 根”切到“当前代码实际走出的新整局热点”：
         - 旧 replay 的 `ply=39 -> 0/0/42` 已被压到秒级，不再值得继续深挖同一类 pure sacrifice 根

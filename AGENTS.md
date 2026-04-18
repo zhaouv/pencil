@@ -30,7 +30,7 @@
   - `TreeSearchAI` 的实验性搜索实现。
   - 当前版本使用 clone-based 回合级路线搜索、alpha-beta、迭代加深、TT、结构评估和无安全步精确收官求解。
   - 已能稳定生成“全吃 / 留最后一口 / 双格链让分 / 四环让分”这类基础路线，并带有“连续无关步快进”和收官延伸搜索骨架。
-  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错、一个根结点让分被普通候选上限截断、一个“小得分区存在 `EDGE_NOW` 但 score route 为空”的候选缺口、一个 live `scoreRegion` 漂移导致 exact score route 直接为空的查询缺口，以及“长链 / 长环只会在 `chain2 / ring4` 才生成 `score-control`”的枚举缺口；本轮又把“小安全边数 late endgame”正式接进 `searchState / searchQuiescence`，当前精确窗口为 `EDGE_NOT <= 5`，补了“小链让分时优先选中间边而不是边界边”的 tie-break，把结构机会的 `owner / handoff` 摘要低成本接进了 `evaluateStructure()`，把 beneficiary 窄接到了 `safe 4 -> 2` 的 safe route ordering，并在 `safe=0` 的 exact sacrifice root 上新增 simple chain/ring representative canonical：只对简单链/环合并 opening，`L2` 只保留中间口，且若命中 `ok` 赢线首手会优先保留该 opening；强度和性能仍未达标。
+  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错、一个根结点让分被普通候选上限截断、一个“小得分区存在 `EDGE_NOW` 但 score route 为空”的候选缺口、一个 live `scoreRegion` 漂移导致 exact score route 直接为空的查询缺口，以及“长链 / 长环只会在 `chain2 / ring4` 才生成 `score-control`”的枚举缺口；本轮又把“小安全边数 late endgame”正式接进 `searchState / searchQuiescence`，当前精确窗口为 `EDGE_NOT <= 5`，补了“小链让分时优先选中间边而不是边界边”的 tie-break，把结构机会的 `owner / handoff` 摘要低成本接进了 `evaluateStructure()`，把 beneficiary 窄接到了 `safe 4 -> 2` 的 safe route ordering，并在 `safe=0` 的 exact sacrifice root 上新增 simple 闭区域 representative canonical：只对 simple chain/ring 闭区域合并 opening，只有 `L2` 强制中间口，其它 `L1 / L3 / R4 ...` 都只留一个代表；若命中 `ok` 赢线首手则优先保留该 opening；强度和性能仍未达标。
 - `server.js`
   - `socket.io` 对战服务器，默认监听 `5050`。
   - 管理随机匹配、指定房间、观战和棋谱广播。
@@ -101,7 +101,7 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - 其中 `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
   - 其中 `late_safe_window_choice` 当前会固定选出 `11,12`（同指纹等价代表边）
   - 其中 `late_structure_opportunity_handoff_after_12_11` 当前会固定识别为 `lastOpportunityOwnerSign=-1 / lastOpportunityBeneficiarySign=-1`
-  - 其中 `exact_sacrifice_simple_region_canonicalization` 当前会固定保留 `9,2 / 6,1 / 1,2 / 1,10 / 5,4 / 9,8 / 11,2` 这类 simple-region 代表 opening，并排除对应边界重复 opening
+  - 其中 `exact_sacrifice_simple_region_canonicalization` 当前会固定保留 `L2` 的中间 opening，并保证 `L4` 这类 simple 闭区域只保留一个代表 opening
   - 其中 `small_chain_sacrifice_middle_preference` 当前会固定选出 `11,6`
   - 其中 `score_then_small_chain_middle_route` 当前会固定生成 `3,12 -> 11,6`
 - `exact_score_prefix_control_only` 当前会固定保持：
@@ -188,7 +188,7 @@ node aivsai.js -1 ts -2 ok -n 5 -s
   - `getExactSacrificeBucketKey()` 现忽略几何方向 `h / v`
   - `exact_root_sacrifice_choice` 的 exact 根节点从 `20` 降到 `16`
   - `ring4_sacrifice_choice` 的 exact 根节点从 `10` 降到 `8`
-  - simple chain/ring 的 exact sacrifice root 现会先做 representative canonical，并在 `L2` 上只保留中间口
+  - simple 闭区域的 exact sacrifice root 现会先做 representative canonical，并只在 `L2` 上强制保留中间口
   - `node ts_cases.js` 当前约 `25.3s`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前约 `17.7s`
 - 本轮又继续回到该慢局路径本身复核：

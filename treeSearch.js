@@ -965,7 +965,6 @@ TreeSearchAI.prototype.getExactSacrificeRegionTopology = function(gameData, anal
 TreeSearchAI.prototype.shouldGroupExactSacrificeRegion = function(gameData, analysis){
     var topology=this.getExactSacrificeRegionTopology(gameData,analysis)
     if(!topology || !topology.isSimple)return false
-    if(topology.size===3 && !topology.isRing)return false
     return true
 }
 
@@ -998,7 +997,7 @@ TreeSearchAI.prototype.compareExactSacrificeRepresentativeAnalyses = function(
     }
     var topology=this.getExactSacrificeRegionTopology(gameData,analysisA)
     if(topology && topology.isSimple){
-        if(topology.isRing || topology.size===1)return 0
+        if(topology.isRing || topology.size!==2)return 0
         var sharedA=this.getExactSacrificeRegionSharedCellCount(gameData,analysisA)
         var sharedB=this.getExactSacrificeRegionSharedCellCount(gameData,analysisB)
         if(sharedA!==sharedB)return sharedA-sharedB

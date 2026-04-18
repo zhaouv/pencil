@@ -253,6 +253,14 @@ var CASES = [
         expect: {
             phase: 'endgame',
             bestMove: [8, 1],
+            exactRepresentativeMovesPresent: [
+                [8, 1],
+            ],
+            exactRepresentativeMovesAbsent: [
+                [7, 2],
+                [9, 2],
+                [8, 3],
+            ],
         },
     },
     {
@@ -637,10 +645,13 @@ var CASES = [
                 [6, 1],
                 [1, 2],
                 [1, 10],
+                [10, 11],
                 [3, 4],
                 [5, 4],
                 [9, 8],
-                [11, 2],
+            ],
+            exactRepresentativeMoveAnyGroups: [
+                [[12, 1], [11, 2], [11, 4], [11, 6], [11, 8]],
             ],
             exactRepresentativeMovesAbsent: [
                 [9, 4],
@@ -650,7 +661,6 @@ var CASES = [
                 [0, 11],
                 [6, 3],
                 [10, 9],
-                [12, 1],
             ],
         },
     },
@@ -1055,7 +1065,8 @@ for (var cc = 0; cc < CASES.length; cc++) {
         }
         if (
             caseDef.expect.exactRepresentativeMovesPresent ||
-            caseDef.expect.exactRepresentativeMovesAbsent
+            caseDef.expect.exactRepresentativeMovesAbsent ||
+            caseDef.expect.exactRepresentativeMoveAnyGroups
         ) {
             okHint = ai.getOkEndgameRolloutHint(gd)
             exactRepresentatives = ai.getExactSacrificeRepresentativeAnalyses(gd, okHint)
@@ -1307,6 +1318,24 @@ for (var cc = 0; cc < CASES.length; cc++) {
                 assertCase(
                     !absentBucket[absentKey],
                     caseDef.name + ' unexpected representative move: ' + absentKey
+                )
+            }
+        }
+        if (caseDef.expect.exactRepresentativeMoveAnyGroups) {
+            var anyBucket = {}
+            for (var rg = 0; rg < exactRepresentatives.length; rg++) {
+                var anyRep = exactRepresentatives[rg]
+                anyBucket[[anyRep.edge.x, anyRep.edge.y].join(',')] = true
+            }
+            for (var gg = 0; gg < caseDef.expect.exactRepresentativeMoveAnyGroups.length; gg++) {
+                var group = caseDef.expect.exactRepresentativeMoveAnyGroups[gg]
+                var presentCount = 0
+                for (var gm = 0; gm < group.length; gm++) {
+                    if (anyBucket[group[gm].join(',')]) presentCount++
+                }
+                assertCase(
+                    presentCount === 1,
+                    caseDef.name + ' representative group mismatch at group ' + gg + ': ' + presentCount
                 )
             }
         }
