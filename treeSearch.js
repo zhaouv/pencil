@@ -857,7 +857,10 @@ TreeSearchAI.prototype.generateExactSacrificeRoutes = function(gameData){
     var bucket={}
     for(var ii=0,analysis;analysis=analyses[ii];ii++){
         var route=this.makeRouteFromAnalysis(gameData,analysis,'sacrifice')
-        if(route)routes.push(route)
+        if(route){
+            route.order=this.getExactSacrificeRouteOrder(route,analysis)
+            routes.push(route)
+        }
         var key=this.getExactSacrificeBucketKey(analysis)
         if(!key || !route)continue
         if(!bucket[key] || route.order>bucket[key].order){
@@ -869,6 +872,17 @@ TreeSearchAI.prototype.generateExactSacrificeRoutes = function(gameData){
         grouped.push(bucket[name])
     }
     return this.collectRepresentativeRoutes(grouped)
+}
+
+TreeSearchAI.prototype.getExactSacrificeRouteOrder = function(route, analysis){
+    if(!route)return -this.MAX_SCORE
+    // Exact pure-sacrifice ordering should prefer the post-open structure itself;
+    // the local opening bonus is tuned for approximate route generation and
+    // over-prioritizes opening large chains in proven endgames.
+    if(analysis && analysis.regionSize>2){
+        return route.order-(analysis.orderBonus||0)
+    }
+    return route.order
 }
 
 TreeSearchAI.prototype.collectEdgeRoutes = function(gameData, edges, limit, tag){

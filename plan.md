@@ -42,7 +42,9 @@
   - 本轮已定位出 exact 爆炸主要来自 `score-all/stop + sacrifice` 组合，并补了 exact TT 与 exact score prefix 去重
   - 观测到的单点最大 exact 分支一度可从 `43` 压到 `26`，但最新 spot check 里仍会出现 `40` 路左右的精确状态
   - 当前带 seed 的单局 spot check 仍需几十秒到 `1m30s` 左右，而 `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 当前版本整体仍耗时约 `9m48s`，说明小安全边数 exact 虽已能修输局，但分支压缩仍不够
-  - 最新慢局样本已经具体定位到 `seed=7` 的 `ply=43`：该状态是 `0/0/42` 的纯 sacrifice endgame，exact route 数为 `20`，`solveLateEndgame()` 单点约跑 `66,971` 个 exact 节点、耗时约 `36s`
+  - `seed=7` 的旧热点 `ply=43` 已不再是唯一主瓶颈：该状态现已从 `16` 条 exact route、约 `9.3s` 继续压到约 `6.7s`
+  - 当前更值得继续盯的是更早的 `ply=39` 路径：`0/5/40 -> 8,9 -> 0/2/42 -> 10,5/12,9 -> 0/0/42`
+  - 这条路径里的 `0/0/42` pure sacrifice 根当前仍有 `10` 条 exact route，但其非负线 `12,1 / 11,2` 先前会被 exact sacrifice 的局部 `orderBonus` 压后
   - 候选生成和评估函数仍然不够贴近 README 里的末盘理论
 - 当前 `ok` 的强度不低。实测 `node aivsai.js -1 ok -2 gr -n 20 -s` 的结果是 `88%` 胜率
 - README 已明确写出 `ok` 的一部分判断是“不够完善的分析”，理论上可以被稳定针对
@@ -63,7 +65,7 @@
     - 先固定使用 `--seed` 做输局复现，当前保留：
       - `seed=1 / 4 / 8 / 123` 作为当前版本已重跑的可赢样本
       - `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 作为当前版本的整轮性能样本
-      - `seed=7` 的 `ply=43` 作为当前版本的 exact 慢局样本
+      - `seed=7` 的 `ply=39 -> 0/0/42` 作为当前版本更核心的 exact 慢局样本
     - 继续围绕 `ts_cases.js` 扩固定局面集，优先补：
       - 边界链与内部链混合（边界链 + ring 已补一例）
       - “一个区域有多种分割方式”的方向性断言
@@ -83,7 +85,15 @@
         - `ring4_sacrifice_choice` 的 exact 根节点现已从 `10` 降到 `8`
         - `seed=7 / ply=43` 的热点状态现已从 `20` 条 exact route 降到 `16` 条
         - 同一热点状态上，`solveLateEndgame()` 已从约 `36s` 降到约 `9.3s`
-      - 下一步不是重复补状态，而是继续验证这层 beneficiary ordering 是否值得扩大范围；它仍不适合直接塞进 `evaluateStructure()` 的 hot path
+      - 本轮又补了一层更窄的 exact sacrifice 排序修正：
+        - `generateExactSacrificeRoutes()` 现在只会对 `regionSize>2` 的大 sacrifice 去掉局部 `orderBonus`
+        - 小链中间口回归 `small_chain_sacrifice_middle_preference` / `score_then_small_chain_middle_route` 仍保持通过
+        - `seed=7` 的 `0/0/42` pure sacrifice 根现会把 `12,1 / 11,2` 提前到前排
+        - 同一根状态上的 `solveLateEndgame()` 约从 `26.0s` 降到 `23.7s`
+      - 本轮还验证过一条更激进的 `forced exact score-prefix canonical` 思路：
+        - `12,1` 与 `11,2`、`3,12` 与 `3,10` 这类 sacrifice 根，确实会在唯一 exact score-prefix 之后汇合到同一局面
+        - 但把这层 canonical 直接接进主线会让整体求解变慢，当前先不合并，后续若再做要先解决计算代价
+      - 下一步不是重复补状态，而是继续验证这层 beneficiary ordering 是否值得扩大范围，并继续沿 `seed=7 / ply=39 -> 0/0/42` 这类慢局压 exact 根；它仍不适合直接塞进 `evaluateStructure()` 的 hot path
         - 另外，当前 `estimateOpportunityOutcomeValue()` 对经典 handoff 的 `allow / block` 两个 outcome 仍都会给出正分，不能直接拿“纯静态替 exact”来接这层信号
     - 优先补状态抽象缺口，而不是先调一般权重：
       - 本轮已给 `GameData` 增加第一版“结构机会区签名 / critical split zone”信息
@@ -546,8 +556,8 @@
   - `11,8 -> 6,11 -> 10,11 -> 12,11` 后现在已能显式表达“最后一个决定性结构机会的动作控制权和 outcome 受益方都归对手”
 - `late_safe_window_choice` 的代表边已从旧的 `12,3` 切到同指纹的 `11,12`，回归已放宽为等价代表边断言
 - 新 spot check：
-  - `time node ts_cases.js` 当前约 `21.4s`
-  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前为 `TS 1:0 OK`，平均步数 `67`，约 `31.7s`
+  - `time node ts_cases.js` 当前约 `19.3s`
+  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前为 `TS 1:0 OK`，平均步数 `67`，约 `26.7s`
 - 固定局面样例还缺：
   - 边界链与内部链混合
   - 更强的“最后一个决定性结构机会归属 / 交接”断言
@@ -558,12 +568,14 @@
   - `getExactSacrificeBucketKey()` 现忽略几何方向 `h / v`
   - 已验证 `exact_root_sacrifice_choice` 的 exact 根节点从 `20` 降到 `16`
   - 已验证 `ring4_sacrifice_choice` 的 exact 根节点从 `10` 降到 `8`
-  - 当前还没有把这条结论外推到 `seed=7 / ply=43`，下一步仍需专门复核热点本身
 - 当前已抓到一个更具体的性能瓶颈样本：
-  - `seed=7` 的 `ply=43` 是 `0/0/42` 的纯 sacrifice endgame
+  - `seed=7` 的旧热点 `ply=43` 当前实际是 `0/0/41` 的 pure sacrifice endgame
   - 该状态旧记录为 `20` 条 exact route、`solveLateEndgame()` 约 `36s`
-  - 当前版本已把它压到 `16` 条 exact route、单点约 `9.3s`
-  - 但整局 `seed=7` 的复测在约 `2m` 内仍未结束，说明该局还有其他后续热点，不能把这次压缩等同于“整局已修完”
+  - 当前版本已把它压到 `16` 条 exact route、单点约 `6.7s`
+  - 但热点已经前移到 `ply=39 -> 0/0/42` 这条路径，本轮进一步确认真正拖慢的是大链 sacrifice 根的排序
+  - 对应的 `0/0/42` pure sacrifice 根当前仍有 `10` 条 exact route，但 `12,1 / 11,2` 两条非负线已被提到前排，单点约从 `26.0s` 降到 `23.7s`
+  - 已验证某些 root sacrifice 会在唯一 exact score-prefix 后汇合到同一后继，但直接 canonical 仍太贵，先记为下一步优化方向
+  - 整局 `seed=7` 仍未重新完整复测，说明当前还不能把这次局部压缩等同于“整局已修完”
   - 已试过的简单 `generateExactSacrificeRoutes().slice(...)` 限流不可直接采用：
     - `top 8` 会把该状态从 `win` 剪成 `loss`
     - `top 12` 会把该状态从 `win` 剪成 `draw`
@@ -578,7 +590,7 @@
   - 例如 `11,8 -> 6,11 -> 10,11 -> 12,11` 之后，当前实现现已固定识别为“最后一个动作机会归对手，且 outcome 也归对手受益”
   - 本轮又把 beneficiary 窄接进了 `safe 4 -> 2` 的 route ordering，说明这层状态已经开始进入主搜索
   - 本轮又把 exact sacrifice bucket 做了保守压缩，至少在固定收官样例里已经看到根节点数下降而不改最佳解
-  - 当前真正剩下的不是“有没有这层状态”，而是“如何继续沿 `seed=7` 这类慢局把下一个热点揪出来”，以及“是否值得继续把 beneficiary 从 `safe 4 -> 2` 扩到更宽的 late exact 入口”
+  - 当前真正剩下的不是“有没有这层状态”，而是“如何继续沿 `seed=7 / ply=39 -> 0/0/42` 这类慢局把 exact 根继续压下去”，以及“是否值得继续把 beneficiary 从 `safe 4 -> 2` 扩到更宽的 late exact 入口”
 
 ### 评估函数建议特征
 

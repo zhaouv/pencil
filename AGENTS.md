@@ -162,17 +162,23 @@ node aivsai.js -1 ts -2 ok -n 5 -s
 - 但候选较多的收官局面仍会明显变慢
 - 本轮已补 exact TT，并把部分状态的最大 exact 分支从 `43` 压到 `26`
 - 本轮又补了根结点无安全步直切 exact 路线集、小得分区 score route 兜底、live `scoreRegion` 实时扫描、长链 / 长环 `score-control` prefix，以及 `EDGE_NOT<=5` 的小安全边数 exact 窗口；当前带 seed 的单局 spot check 仍需几十秒到 `1m30s` 左右，而 `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 整体仍耗时约 `9m48s`
-- 当前已定位出的最新慢局热点是 `seed=7` 的 `ply=43`：该状态进入 `0/0/42` 的纯 sacrifice endgame 后仍有 `20` 条 exact route，`solveLateEndgame()` 单点约跑 `66,971` 个 exact 节点、耗时约 `36s`
+- `seed=7` 的旧热点 `ply=43` 已明显缓和：该状态当前已压到 `16` 条 exact route，单点约 `6.7s`
+- 当前更关键的慢局路径前移到了 `seed=7` 的 `ply=39 -> 0/0/42`：
+  - `ply=39` 会沿 `8,9 -> 0/2/42 -> 10,5/12,9 -> 0/0/42` 进入新的 pure sacrifice 根
+  - 这个 `0/0/42` 根当前仍有 `10` 条 exact route，且真正不差的 `12,1 / 11,2` 先前会被大 sacrifice 的局部 `orderBonus` 压后
 - 本轮已先在固定收官样例上验证一层保守压缩：
   - `getExactSacrificeBucketKey()` 现忽略几何方向 `h / v`
   - `exact_root_sacrifice_choice` 的 exact 根节点从 `20` 降到 `16`
   - `ring4_sacrifice_choice` 的 exact 根节点从 `10` 降到 `8`
-  - `node ts_cases.js` 当前约 `21.4s`
-  - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前约 `31.7s`
-- 本轮又直接回到该热点本身复核：
-  - `seed=7 / ply=43` 当前也已从 `20` 条 exact route 降到 `16`
-  - 同一局面上的 `solveLateEndgame()` 已从约 `36s` 降到约 `9.3s`
-  - 但整局 `seed=7` 的复测在约 `2m` 内仍未结束，说明后面还有其他慢点，热点定位还要继续
+  - `node ts_cases.js` 当前约 `19.3s`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前约 `26.7s`
+- 本轮又继续回到该慢局路径本身复核：
+  - `seed=7 / ply=43` 的旧 pure sacrifice 热点现已从约 `36s` 进一步降到约 `6.7s`
+  - `generateExactSacrificeRoutes()` 现在只会对 `regionSize>2` 的大 sacrifice 去掉局部 `orderBonus`
+  - 小链中间口回归 `small_chain_sacrifice_middle_preference` / `score_then_small_chain_middle_route` 仍保持通过
+  - `seed=7` 的 `0/0/42` pure sacrifice 根现会把 `12,1 / 11,2` 提前到前排，单点约从 `26.0s` 降到 `23.7s`
+  - 已验证 `12,1 / 11,2`、`3,12 / 3,10` 这类根 sacrifice 会在唯一 exact score-prefix 后汇合，但直接把这层 canonical 接进主线会让整体求解变慢，当前先不合并
+  - 整局 `seed=7` 仍未重新完整复测，说明热点定位还要继续
 - 旧的 `seed=8` 固定输局已在本轮翻成赢局，但这并不代表 exact 内部候选已经完整；整局里仍会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩，并重新扫描新的稳定输局样本
 - 更大样本 benchmark 依然不适合直接放大
 - 后续如果要继续提胜率，必须同时优化：
