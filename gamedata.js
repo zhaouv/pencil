@@ -789,12 +789,17 @@ GameData.prototype.getScoreRegions=function(){
     if(this.__scoreRegions)return this.__scoreRegions
     var gameData=this
     var regions=[]
-    var seen={}
-    for(var ii=0,index;index=gameData.scoreRegion[ii];ii++){
-        var region=gameData.connectedRegion[index]
-        if(!region || seen[region.index])continue
-        seen[region.index]=true
-        regions.push(region)
+    if(!gameData.edgeCount[gameData.EDGE_NOW]){
+        this.__scoreRegions=regions
+        return regions
+    }
+    var allRegions=gameData.getRegions()
+    for(var ii=0,region;region=allRegions[ii];ii++){
+        for(var jj=0,pt;pt=region.block[jj];jj++){
+            if(gameData.xy(pt.x,pt.y)!==gameData.SCORE_3)continue
+            regions.push(region)
+            break
+        }
     }
     this.__scoreRegions=regions
     return regions
@@ -861,8 +866,9 @@ GameData.prototype.getRegionStats=function(){
     var regions=gameData.getRegions()
     var closedRegions=gameData.getClosedRegions()
     var scoreSet={}
-    for(var ii=0,index;index=gameData.scoreRegion[ii];ii++){
-        scoreSet[index]=true
+    var scoreRegions=gameData.getScoreRegions()
+    for(var ii=0,scoreRegion;scoreRegion=scoreRegions[ii];ii++){
+        scoreSet[scoreRegion.index]=true
     }
     var stats={
         regionNum:regions.length,

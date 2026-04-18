@@ -631,15 +631,7 @@ TreeSearchAI.prototype.getControlMoveFromRegion = function(gameData, region){
 }
 
 TreeSearchAI.prototype.getActiveScoreRegions = function(gameData){
-    var regions=[]
-    var seen={}
-    for(var ii=0,index;index=gameData.scoreRegion[ii];ii++){
-        var region=gameData.connectedRegion[index]
-        if(!region || seen[region.index])continue
-        seen[region.index]=true
-        regions.push(region)
-    }
-    return regions
+    return gameData.getScoreRegions().slice()
 }
 
 TreeSearchAI.prototype.findRegionByIndex = function(regions, regionIndex){

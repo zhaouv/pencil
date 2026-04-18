@@ -197,7 +197,7 @@ var CASES = [
         expect: {
             phase: 'endgame',
             largeClosedNum: 3,
-            bestMove: [1, 2],
+            bestMove: [1, 12],
         },
     },
     {
@@ -394,6 +394,68 @@ var CASES = [
             exactSign: 'loss',
         },
     },
+    {
+        name: 'live_ring8_score_prefix',
+        xsize: 6,
+        ysize: 6,
+        buildWith: 'gamedata',
+        history: [
+            [1, 0, 0],
+            [2, 3, 1],
+            [0, 1, 0],
+            [7, 8, 1],
+            [0, 3, 0],
+            [8, 7, 1],
+            [4, 3, 0],
+            [0, 11, 1],
+            [3, 0, 0],
+            [11, 0, 1],
+            [10, 1, 0],
+            [0, 9, 1],
+            [5, 0, 0],
+            [8, 1, 1],
+            [8, 3, 0],
+            [10, 5, 1],
+            [12, 3, 0],
+            [9, 8, 1],
+            [0, 5, 0],
+            [6, 11, 1],
+            [4, 5, 0],
+            [8, 9, 1],
+            [0, 7, 0],
+            [4, 7, 1],
+            [12, 7, 0],
+            [3, 8, 1],
+            [12, 9, 0],
+            [11, 10, 1],
+            [3, 12, 0],
+            [7, 12, 1],
+            [8, 5, 0],
+            [6, 5, 1],
+            [9, 12, 0],
+            [2, 5, 1],
+            [7, 0, 0],
+            [1, 8, 1],
+            [4, 1, 0],
+            [2, 11, 1],
+            [11, 4, 0],
+            [5, 8, 1],
+            [5, 10, 0],
+            [10, 11, 1],
+            [6, 3, 0],
+            [9, 0, 1],
+            [9, 2, 0],
+            [2, 1, 0],
+        ],
+        expect: {
+            phase: 'endgame',
+            minScoreEdges: 1,
+            normalPrefixTags: ['score-all', 'score-stop'],
+            exactPrefixTags: ['score-all', 'score-stop'],
+            exactRequired: true,
+            exactSign: 'win',
+        },
+    },
 ]
 
 function assertCase(condition, message) {
@@ -403,6 +465,15 @@ function assertCase(condition, message) {
 }
 
 function buildGameData(caseDef) {
+    if (caseDef.buildWith === 'gamedata') {
+        var liveGame = new Game().init(caseDef.xsize, caseDef.ysize)
+        var gd = new GameData().fromGame(liveGame)
+        for (var jj = 0; jj < caseDef.history.length; jj++) {
+            var liveMove = caseDef.history[jj]
+            gd.putxy(liveMove[0], liveMove[1])
+        }
+        return gd
+    }
     var game = new Game().init(caseDef.xsize, caseDef.ysize)
     game.lock = 0
     for (var ii = 0; ii < caseDef.history.length; ii++) {

@@ -24,7 +24,7 @@
   - 上一轮在“回合级路线 + 搜索核心优化 + Phase 4 结构评估初版”上跑过的 2+2 自定义短样本基线为：
     - `ts vs ok` 为 `1:3`
     - `ts vs gr` 为 `2:2`
-  - 本轮又补了“`--seed` 可复现对局 + 无安全步精确收官直切 exact + 根结点无安全步直接走 exact 路线集 + `exact_root_sacrifice_choice` 固定回归 + 小得分区 score route 校验/动态兜底 + `boundary_chain_ring_score_prefix` 回归”，但尚未重跑同口径 2+2 样本
+  - 本轮又补了“`--seed` 可复现对局 + 无安全步精确收官直切 exact + 根结点无安全步直接走 exact 路线集 + `exact_root_sacrifice_choice` 固定回归 + 小得分区 score route 校验/动态兜底 + `boundary_chain_ring_score_prefix` 回归 + live `scoreRegion` 查询改走实时扫描 + `live_ring8_score_prefix` 回归”，但尚未重跑同口径 2+2 样本
 - 当前主要问题：
   - 对 `ok` 还远未达到 `80%`
   - 回合级路线骨架和搜索核心都已经落地，Phase 4 的显式特征和无安全步精确收官也已接入，但当前排序和评估还不足以支撑强度
@@ -72,7 +72,7 @@
 
 ## 总体策略
 
-持续运行直到完成计划, 文档和代码同步, 自行判断git commit的时机, commit后全面review计划(可以调整)
+持续运行直到完成计划, 文档和代码同步, 自行判断git commit的时机, commit后全面review计划(可以调整), 然后继续计划
 
 - 先把 `TreeSearchAI` 做成“稳定、合法、可重复评测”的 AI
 - 优先把 `README.md` 里的点格棋分析落地成代码中的显式概念，而不是只堆通用搜索
@@ -452,12 +452,14 @@
   - `exact_root_sacrifice_choice`
   - `exact_score_prefix_control_only`
   - `boundary_chain_ring_score_prefix`
+  - `live_ring8_score_prefix`
 - 已验证：
   - `node ts_cases.js`
   - `node -e "require('./game.js'); require('./gamedata.js'); require('./player.js'); require('./treeSearch.js'); console.log('core ok')"`
+  - `ring4_sacrifice_choice` 当前会固定选出 `1,12`
   - `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
-  - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `1:0`，平均步数 `78`
-  - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `0:1`，平均步数 `68`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `1:0`，平均步数 `69`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `0:1`，平均步数 `78`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`，平均步数 `67`
   - `node aivsai.js -1 ts -2 gr -n 1 --seed 123` 为 `1:0`，平均步数 `67`
   - `node aivsai.js -1 ok -2 gr -n 1 -s --seed 123` 可稳定复现 `OK 2胜 GR 0负 (100%)`

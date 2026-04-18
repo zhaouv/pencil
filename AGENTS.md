@@ -20,6 +20,7 @@
 - `gamedata.js`
   - 从 `Game` 派生给 AI 使用的盘面数据结构 `GameData`。
   - 维护边分类、联通区域、区域取边、安全步结构分析，以及 Phase 4 结构评估特征抽取等 AI 辅助能力。
+  - 当前 `getScoreRegions()` 已改成按实时区域扫描 `SCORE_3`，不再信任 live 增量路径里可能漂移的原始 `scoreRegion` 列表。
 - `player.js`
   - 玩家抽象 `GamePlayer`。
   - 本地玩家、网络玩家、AI 基类。
@@ -28,7 +29,7 @@
   - `TreeSearchAI` 的实验性搜索实现。
   - 当前版本使用 clone-based 回合级路线搜索、alpha-beta、迭代加深、TT、结构评估和无安全步精确收官求解。
   - 已能稳定生成“全吃 / 留最后一口 / 双格链让分 / 四环让分”这类基础路线，并带有“连续无关步快进”和收官延伸搜索骨架。
-  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错、一个根结点让分被普通候选上限截断，以及一个“小得分区存在 `EDGE_NOW` 但 score route 为空”的候选缺口，但强度和性能仍未达标。
+  - `GameData` 侧已补状态缓存和定制 `clone()`；当前无安全步精确收官分支已改成“结构指纹去重 + 精确搜索”，并开始在 `control` 存在时跳过同区域的 `stopBeforeLast`，同时补了带 `exact / lower / upper` 的 exact TT，并把“根结点无安全步”切到 exact 路线集，修掉了一个 ring4 让分选错、一个根结点让分被普通候选上限截断、一个“小得分区存在 `EDGE_NOW` 但 score route 为空”的候选缺口，以及一个 live `scoreRegion` 漂移导致 exact score route 直接为空的查询缺口，但强度和性能仍未达标。
 - `server.js`
   - `socket.io` 对战服务器，默认监听 `5050`。
   - 管理随机匹配、指定房间、观战和棋谱广播。
@@ -94,7 +95,7 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - `node aivsai.js -1 ts -2 ok -n 1`
 - 已验证 `ts_cases.js` 固定局面回归可通过：
   - `node ts_cases.js`
-  - 其中 `ring4_sacrifice_choice` 当前会固定选出 `1,2`
+  - 其中 `ring4_sacrifice_choice` 当前会固定选出 `1,12`
   - 其中 `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
 - `exact_score_prefix_control_only` 当前会固定保持：
   - 普通 score prefixes 为 `score-all / score-stop / score-control`
@@ -102,9 +103,11 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
 - `boundary_chain_ring_score_prefix` 当前会固定保持：
   - 普通 score prefixes 为 `score-all / score-stop`
   - exact score prefixes 为 `score-all / score-stop`
+- `live_ring8_score_prefix` 当前会固定保持：
+  - 通过 `GameData.putxy()` 连续推进后，普通 / exact score prefixes 都为 `score-all / score-stop`
 - 已验证单局 spot check：
-  - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `1:0`，平均步数 `78`
-  - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `0:1`，平均步数 `68`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `1:0`，平均步数 `69`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `0:1`，平均步数 `78`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`，平均步数 `67`
   - `node aivsai.js -1 ts -2 gr -n 1 --seed 123` 为 `1:0`，平均步数 `67`
 - 已验证短样本基准：

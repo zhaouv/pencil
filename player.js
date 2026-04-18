@@ -349,12 +349,15 @@ OffensiveKeeperAI.prototype.constructor = OffensiveKeeperAI
 
 OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
     var gameData=this.gameData
-    var scoreRegions=gameData.scoreRegion.filter(function(regionIndex){
-        return !!gameData.connectedRegion[regionIndex]
+    var scoreRegions=gameData.getScoreRegions().map(function(region){
+        return region.index
     })
-    gameData.scoreRegion=scoreRegions
     if(!scoreRegions.length){
         return this.getRandWhere(gameData.EDGE_NOW)
+    }
+    var scoreRegionSet={}
+    for(var ss=0;ss<scoreRegions.length;ss++){
+        scoreRegionSet[scoreRegions[ss]]=true
     }
 
     var eatOne = gameData.getOneEdgeFromRegionIndex(scoreRegions[0]) // >随便吃一块时的值
@@ -379,7 +382,7 @@ OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
     if(regions[1]){
         for(var ii=0;ii<regions[1].length;ii++){
             var regionIndex=regions[1][ii];
-            if(gameData.scoreRegion.indexOf(regionIndex)!==-1)return gameData.getOneEdgeFromRegionIndex(regionIndex);
+            if(scoreRegionSet[regionIndex])return gameData.getOneEdgeFromRegionIndex(regionIndex);
         }
     }
 
@@ -387,7 +390,7 @@ OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
     if(regions[2] && scoreRegions.length>1){
         for(var ii=0;ii<regions[2].length;ii++){
             var regionIndex=regions[2][ii];
-            if(scoreRegions.indexOf(regionIndex)!==-1)return gameData.getOneEdgeFromRegionIndex(regionIndex);
+            if(scoreRegionSet[regionIndex])return gameData.getOneEdgeFromRegionIndex(regionIndex);
         }
     }
 
