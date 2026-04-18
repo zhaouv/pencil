@@ -7,6 +7,8 @@
 //   -n, --rounds <n>    局数 (default: 100)
 //   --seed <n>          固定随机种子
 //   -o, --output <file> 录像输出 (.json 或 .html)
+//   --late-trace <file> 逐行追加 EDGE_NOT<=5 的实际对局路径
+//   --trace-safe-max <n> late-trace 记录的 safeEdgeCount 上限 (default: 5)
 //   -s, --swap          交换先后手再跑一轮
 //   -h, --help          显示帮助
 
@@ -84,12 +86,25 @@ function printHelp() {
         '  -n, --rounds <n>    局数 (default: 100)',
         '  --seed <n>          固定随机种子',
         '  -o, --output <file> 录像输出 (.json 或 .html)',
+        '  --late-trace <file> 逐行追加 EDGE_NOT<=5 的实际对局路径',
+        '  --trace-safe-max <n> late-trace 记录的 safeEdgeCount 上限 (default: 5)',
         '  -s, --swap          交换先后手再跑一轮',
         '  -h, --help          显示帮助',
     ].join('\n'))
 }
 
-var config = { ai1: 'ok', ai2: 'gr', xsize: 6, ysize: 6, rounds: 100, output: null, swap: false, seed: null }
+var config = {
+    ai1: 'ok',
+    ai2: 'gr',
+    xsize: 6,
+    ysize: 6,
+    rounds: 100,
+    output: null,
+    lateTrace: null,
+    traceSafeMax: 5,
+    swap: false,
+    seed: null,
+}
 var args = process.argv.slice(2)
 
 for (var i = 0; i < args.length; i++) {
@@ -101,6 +116,8 @@ for (var i = 0; i < args.length; i++) {
         case '-n': case '--rounds': config.rounds = parseInt(args[++i]); break
         case '--seed': config.seed = args[++i]; break
         case '-o': case '--output': config.output = args[++i]; break
+        case '--late-trace': config.lateTrace = args[++i]; break
+        case '--trace-safe-max': config.traceSafeMax = parseInt(args[++i]); break
         case '-s': case '--swap': config.swap = true; break
         case '-h': case '--help': printHelp(); process.exit(0)
         default: console.error('未知参数: ' + args[i]); printHelp(); process.exit(1)
@@ -122,7 +139,12 @@ function setSandboxRandom(seed) {
     return normalized
 }
 
-function aivsai(AI1Cls, AI2Cls, xsize, ysize, rounds, seedBase) {
+function appendLateTrace(record) {
+    if (!config.lateTrace) return
+    fs.appendFileSync(config.lateTrace, JSON.stringify(record) + '\n')
+}
+
+function aivsai(AI1Cls, AI2Cls, xsize, ysize, rounds, seedBase, traceMeta) {
     var wins = [0, 0]
     var games = []
     var unfinished = 0
@@ -141,9 +163,30 @@ function aivsai(AI1Cls, AI2Cls, xsize, ysize, rounds, seedBase) {
         while (gd.winnerId == null) {
             var ai = gd.playerId === 0 ? ai1 : ai2
             ai.gameData = gd
+            var traceRecord = null
+            if (config.lateTrace && gd.edgeCount[gd.EDGE_NOT] <= config.traceSafeMax) {
+                traceRecord = {
+                    set: traceMeta.set,
+                    round: r,
+                    seed: gameSeed,
+                    ai1: traceMeta.ai1,
+                    ai2: traceMeta.ai2,
+                    ply: history.length,
+                    player: gd.playerId,
+                    score: [gd.player[0].score, gd.player[1].score],
+                    edges: [
+                        gd.edgeCount[gd.EDGE_NOW],
+                        gd.edgeCount[gd.EDGE_NOT],
+                        gd.edgeCount[gd.EDGE_WILL],
+                    ],
+                }
+            }
+            var whereStart = Date.now()
+            var fallbackReason = null
             try {
                 var where = ai.where()
             } catch(e) {
+                fallbackReason = e.message
                 console.error('第' + (r + 1) + '局 AI异常: ' + e.message + ' playerId:' + gd.playerId)
                 // fallback: 随机走一步
                 var edges = gd.getAllEdges(gd.EDGE_NOW)
@@ -152,9 +195,16 @@ function aivsai(AI1Cls, AI2Cls, xsize, ysize, rounds, seedBase) {
                 if (edges.length === 0) break
                 var where = edges[0]
             }
+            var whereMs = Date.now() - whereStart
             if (typeof where !== 'object' || where.x == null || where.y == null) {
                 console.error('第' + (r + 1) + '局 AI返回非法着法:', where, 'playerId:', gd.playerId)
                 break
+            }
+            if (traceRecord) {
+                traceRecord.ms = whereMs
+                traceRecord.move = [where.x, where.y]
+                if (fallbackReason) traceRecord.fallbackReason = fallbackReason
+                appendLateTrace(traceRecord)
             }
             history.push([where.x, where.y, gd.playerId])
             gd.putxy(where.x, where.y)
@@ -182,11 +232,22 @@ var ai2Info = AI_MAP[config.ai2]
 var seedBase = normalizeSeed(config.seed == null ? null : String(config.seed))
 
 var results = []
+if (config.lateTrace) {
+    fs.writeFileSync(config.lateTrace, '')
+}
 
 // 正序
 console.log(ai1Info.name + '(先手) vs ' + ai2Info.name + '(后手) ' + config.xsize + 'x' + config.ysize + ' ' + config.rounds + '局')
 if (seedBase != null) console.log('随机种子: ' + seedBase)
-var r1 = aivsai(ai1Info.cls, ai2Info.cls, config.xsize, config.ysize, config.rounds, seedBase)
+var r1 = aivsai(
+    ai1Info.cls,
+    ai2Info.cls,
+    config.xsize,
+    config.ysize,
+    config.rounds,
+    seedBase,
+    { set: 0, ai1: config.ai1, ai2: config.ai2 }
+)
 console.log('结果: ' + ai1Info.short + ' ' + r1.wins[0] + '胜 ' + ai2Info.short + ' ' + r1.wins[1] + '负')
 if (r1.unfinished) console.log('未完成: ' + r1.unfinished + '局')
 console.log('平均步数: ' + r1.averageMoves)
@@ -196,7 +257,15 @@ if (config.swap) {
     console.log('')
     console.log(ai2Info.name + '(先手) vs ' + ai1Info.name + '(后手) ' + config.xsize + 'x' + config.ysize + ' ' + config.rounds + '局')
     var swapSeedBase = seedBase == null ? null : ((seedBase + config.rounds) >>> 0)
-    var r2 = aivsai(ai2Info.cls, ai1Info.cls, config.xsize, config.ysize, config.rounds, swapSeedBase)
+    var r2 = aivsai(
+        ai2Info.cls,
+        ai1Info.cls,
+        config.xsize,
+        config.ysize,
+        config.rounds,
+        swapSeedBase,
+        { set: 1, ai1: config.ai2, ai2: config.ai1 }
+    )
     console.log('结果: ' + ai1Info.short + ' ' + r2.wins[1] + '胜 ' + ai2Info.short + ' ' + r2.wins[0] + '负')
     if (r2.unfinished) console.log('未完成: ' + r2.unfinished + '局')
     console.log('平均步数: ' + r2.averageMoves)
@@ -206,6 +275,9 @@ if (config.swap) {
     var total2 = r1.wins[1] + r2.wins[0]
     console.log('')
     console.log('综合 ' + (config.rounds * 2) + '局: ' + ai1Info.short + ' ' + total1 + '胜 ' + ai2Info.short + ' ' + total2 + '负 (' + Math.round(total1 / (config.rounds * 2) * 100) + '%)')
+}
+if (config.lateTrace) {
+    console.log('晚盘trace已保存: ' + config.lateTrace)
 }
 
 // ============ 录像输出 ============

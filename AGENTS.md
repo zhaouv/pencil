@@ -36,6 +36,7 @@
   - 管理随机匹配、指定房间、观战和棋谱广播。
 - `aivsai.js`
   - Node CLI，用于 AI vs AI 批量对战、带 seed 的可复现对局和录像导出。
+  - 当前还支持 `--late-trace <file>` 和 `--trace-safe-max <n>`，可在对局运行过程中逐行记录指定 `safeEdgeCount` 窗口内的实际路径；即使外部用 `timeout` 提前终止，也能保留已采到的 trace。
 - `ts_cases.js`
   - Node 下的固定局面回归脚本，用于检查 `TreeSearchAI` 的结构评估特征、无安全步收官判断、关键让分选择和 exact score prefix 假设。
 
@@ -122,6 +123,9 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`，平均步数 `71`
   - 当前 `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 约 `17.7s`
   - 当前 `time node ts_cases.js` 约 `25.3s`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 1 --late-trace /tmp/pencil_seed1_trace12.jsonl --trace-safe-max 12` 可正常完成，并写出 `29` 条 trace
+  - `timeout 20s node aivsai.js -1 ts -2 ok -n 1 --seed 7 --late-trace /tmp/pencil_seed7_trace12.jsonl --trace-safe-max 12` 会超时，且 trace 为 `0` 条
+  - `timeout 20s node aivsai.js -1 ts -2 ok -n 1 --seed 7 --late-trace /tmp/pencil_seed7_trace20.jsonl --trace-safe-max 20` 会超时，但已写出 `2` 条 trace；当前只走到 `ply=34/35`、`safe=20/18`
 - 已验证短样本基准：
   - 上一轮 2+2 自定义短样本基线为：
     - `ts vs ok` 为 `1:3`
@@ -177,6 +181,9 @@ node aivsai.js -1 ts -2 ok -n 5 -s
     - `ply=40~43` 当前约 `1.1s ~ 1.7s`
     - 说明旧 replay 的 late exact 爆点已经被明显压平，下一步需要转去抓当前代码实际走出的新整局热点，而不是继续深挖同一类 `0safe` 根
   - 但当前代码直接跑 `timeout 60s node aivsai.js -1 ts -2 ok -n 1 --seed 7 -o /tmp/pencil_seed7_current.json` 仍未在时限内自然结束，也没有生成完整新录像
+  - 结合新的 `--late-trace` 结果看，当前版本的 `seed=7` 热点已经早于旧 late window：
+    - `safe<=12` 在 `20s` 内仍未进入
+    - `safe<=20` 在 `20s` 内只推进到 `ply=34/35`
   - 本轮已先在固定收官样例上验证两层压缩：
   - `getExactSacrificeBucketKey()` 现忽略几何方向 `h / v`
   - `exact_root_sacrifice_choice` 的 exact 根节点从 `20` 降到 `16`
@@ -199,9 +206,9 @@ node aivsai.js -1 ts -2 ok -n 5 -s
     - 说明 `ok rollout` 排序提示进一步压下了旧 `ply=43` 热点，但 `ply=39` 还没有被真正解决
   - 整局 `seed=7` 仍未重新完整复测，说明热点定位还要继续
   - 下一轮的 profiling 入口应改成“当前版本新录像”而不是旧 replay：
-    - 先给当前版本的 `seed=7` 对局加运行中打点或中途落盘能力，避免继续盲等整局
-    - 拿到新的实际对局路径后，再按 `EDGE_NOT<=5` 重扫
-    - 确认新的慢点是否已经上移到更早的 `safe` / `score+safe` 过渡段
+    - 先直接用现有 `--late-trace` 把窗口继续往前开，必要时上提到 `safe<=24` 甚至更高
+    - 拿到新的实际对局路径后，再按同一路径做独立状态重扫
+    - 当前优先确认新的慢点是否已经上移到更早的 `safe` / `score+safe` 过渡段
 - 旧的 `seed=8` 固定输局已在本轮翻成赢局，但这并不代表 exact 内部候选已经完整；整局里仍会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩，并重新扫描新的稳定输局样本
 - 更大样本 benchmark 依然不适合直接放大
 - 后续如果要继续提胜率，必须同时优化：
