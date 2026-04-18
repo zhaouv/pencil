@@ -74,6 +74,7 @@
         - `ply=39` 仍是头号慢点，但约 `1.8s`
         - `ply=40~43` 当前约 `1.1s ~ 1.7s`
         - 说明 simple-region canonical 已把旧 replay 的 late exact 爆点大幅压平，下一轮不要再把 `0/0/42` 当作唯一主瓶颈
+      - 但当前代码直接跑 `timeout 60s node aivsai.js -1 ts -2 ok -n 1 --seed 7 -o /tmp/pencil_seed7_current.json` 仍未在时限内自然结束，也没有生成完整新录像
     - 继续围绕 `ts_cases.js` 扩固定局面集，优先补：
       - 边界链与内部链混合（边界链 + ring 已补一例）
       - “一个区域有多种分割方式”的方向性断言
@@ -109,7 +110,9 @@
         - 这层改动已补进 `ts_cases.js`，包括新回归 `exact_sacrifice_simple_region_canonicalization`
       - 下一步不是继续补新的摘要状态，而是把 profiling 入口从“旧 replay 的 0safe 根”切到“当前代码实际走出的新整局热点”：
         - 旧 replay 的 `ply=39 -> 0/0/42` 已被压到秒级，不再值得继续深挖同一类 pure sacrifice 根
-        - 下一轮优先生成新的当前版本 `seed=7` 录像，按 `EDGE_NOT<=5` 重扫实际对局路径，确认新的慢点是否已经上移到更早的 `safe` / `score+safe` 过渡段
+        - 下一轮优先做“当前版本新对局路径”的热点采样工具，而不是继续盲等整局：
+          - 优先让 `seed=7` 在运行中按 ply 打点 `EDGE_NOT<=5` 的耗时与首手，必要时直接中途落盘
+          - 拿到当前版本实际路径后，再按 `EDGE_NOT<=5` 重扫，确认新的慢点是否已经上移到更早的 `safe` / `score+safe` 过渡段
         - beneficiary ordering 仍先保持在当前窄接范围，不继续外扩到 `evaluateStructure()` hot path
         - 另外，当前 `estimateOpportunityOutcomeValue()` 对经典 handoff 的 `allow / block` 两个 outcome 仍都会给出正分，不能直接拿“纯静态替 exact”来接这层信号
     - 优先补状态抽象缺口，而不是先调一般权重：

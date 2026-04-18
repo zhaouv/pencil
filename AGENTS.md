@@ -176,6 +176,7 @@ node aivsai.js -1 ts -2 ok -n 5 -s
     - `ply=39` 仍是头号慢点，但约 `1.8s`
     - `ply=40~43` 当前约 `1.1s ~ 1.7s`
     - 说明旧 replay 的 late exact 爆点已经被明显压平，下一步需要转去抓当前代码实际走出的新整局热点，而不是继续深挖同一类 `0safe` 根
+  - 但当前代码直接跑 `timeout 60s node aivsai.js -1 ts -2 ok -n 1 --seed 7 -o /tmp/pencil_seed7_current.json` 仍未在时限内自然结束，也没有生成完整新录像
   - 本轮已先在固定收官样例上验证两层压缩：
   - `getExactSacrificeBucketKey()` 现忽略几何方向 `h / v`
   - `exact_root_sacrifice_choice` 的 exact 根节点从 `20` 降到 `16`
@@ -198,8 +199,8 @@ node aivsai.js -1 ts -2 ok -n 5 -s
     - 说明 `ok rollout` 排序提示进一步压下了旧 `ply=43` 热点，但 `ply=39` 还没有被真正解决
   - 整局 `seed=7` 仍未重新完整复测，说明热点定位还要继续
   - 下一轮的 profiling 入口应改成“当前版本新录像”而不是旧 replay：
-    - 先生成新的 `seed=7` 录像
-    - 再按 `EDGE_NOT<=5` 重扫实际对局路径
+    - 先给当前版本的 `seed=7` 对局加运行中打点或中途落盘能力，避免继续盲等整局
+    - 拿到新的实际对局路径后，再按 `EDGE_NOT<=5` 重扫
     - 确认新的慢点是否已经上移到更早的 `safe` / `score+safe` 过渡段
 - 旧的 `seed=8` 固定输局已在本轮翻成赢局，但这并不代表 exact 内部候选已经完整；整局里仍会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩，并重新扫描新的稳定输局样本
 - 更大样本 benchmark 依然不适合直接放大
