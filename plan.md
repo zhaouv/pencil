@@ -32,15 +32,16 @@
     - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `1:0`
     - `node aivsai.js -1 ts -2 ok -n 1 --seed 8` 为 `1:0`
     - `node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`
-  - 但本轮当前版本尚未重跑同口径 2+2 样本
+    - `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 为 `4:0`
+  - 但本轮当前版本尚未重跑 `ts vs gr` 的同口径 2+2 样本
 - 当前主要问题：
   - 对 `ok` 还远未达到 `80%`
   - 回合级路线骨架和搜索核心都已经落地，Phase 4 的显式特征和无安全步精确收官也已接入，但当前排序和评估还不足以支撑强度
-  - 上一提交的固定 seed spot check 和 2+2 自定义短样本都已翻正；本轮又把 `seed=8` 固定输局翻成赢局，但样本仍然太小，还不能据此认定对 `ok` / `gr` 已稳定占优
+  - 上一提交的固定 seed spot check 和 2+2 自定义短样本都已翻正；本轮又把 `seed=8` 固定输局翻成赢局，并把当前版本 `ts vs ok` 的 2+2 重跑到 `4:0`，但样本仍然太小，还不能据此认定对 `ok` / `gr` 已稳定占优
   - clone-based 搜索性能已较最早版本明显改善，但更大样本仍偏慢
   - 本轮已定位出 exact 爆炸主要来自 `score-all/stop + sacrifice` 组合，并补了 exact TT 与 exact score prefix 去重
   - 观测到的单点最大 exact 分支一度可从 `43` 压到 `26`，但最新 spot check 里仍会出现 `40` 路左右的精确状态
-  - 当前带 seed 的单局 spot check 仍需几十秒到 `1m30s` 左右，且本轮 `seed=7` 还出现了数分钟级慢局，说明小安全边数 exact 虽已能修输局，但分支压缩仍不够
+  - 当前带 seed 的单局 spot check 仍需几十秒到 `1m30s` 左右，而 `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 当前版本整体仍耗时约 `9m48s`，说明小安全边数 exact 虽已能修输局，但分支压缩仍不够
   - 候选生成和评估函数仍然不够贴近 README 里的末盘理论
 - 当前 `ok` 的强度不低。实测 `node aivsai.js -1 ok -2 gr -n 20 -s` 的结果是 `88%` 胜率
 - README 已明确写出 `ok` 的一部分判断是“不够完善的分析”，理论上可以被稳定针对
@@ -60,7 +61,7 @@
   - 优先项：
     - 先固定使用 `--seed` 做输局复现，当前保留：
       - `seed=1 / 4 / 8 / 123` 作为当前版本已重跑的可赢样本
-      - `seed=7` 作为当前版本的慢局性能样本
+      - `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 作为当前版本的整轮性能样本
       - 下一步重新扫描新的稳定输局样本，不再沿用旧的 `seed=8` 输局结论
     - 继续围绕 `ts_cases.js` 扩固定局面集，优先补：
       - 边界链与内部链混合（边界链 + ring 已补一例）
@@ -476,6 +477,8 @@
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `1:0`，平均步数 `80`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 8` 为 `1:0`，平均步数 `72`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`，平均步数 `71`
+  - 本轮当前版本已验证：
+    - `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 为 `4:0`
   - 上一提交已验证：
     - `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 为 `4:0`
     - `node aivsai.js -1 ts -2 gr -n 2 -s --seed 123` 为 `4:0`
@@ -486,13 +489,13 @@
 - 上一提交的最近 2+2 自定义短样本已经翻成：
   - `ts vs ok` 为 `4:0`
   - `ts vs gr` 为 `4:0`
-- 本轮又把 `seed=8` 固定输局翻成赢局，但当前版本尚未重跑同口径 2+2，因此还没有形成可宣称稳定的胜率优势
+- 本轮又把 `seed=8` 固定输局翻成赢局，并把当前版本 `ts vs ok` 的 2+2 重跑为 `4:0`，但当前版本对 `gr` 尚未重跑同口径 2+2，因此还没有形成可宣称稳定的胜率优势
 - 固定局面样例还缺：
   - 边界链与内部链混合
   - 更强的“多种分割方式”方向性断言
 - 已有 `--seed` 支持，但还没有基于固定 seed 集的更大样本 benchmark
 - `controlSwing`、大区域归属和 transition 阶段的权重仍然偏经验值，需要结合输局继续校正
-- 当前无安全步精确收官虽然已补 exact TT、根结点 exact 路线直切、小得分区 score route 校验、live `scoreRegion` 实时扫描、长链 / 长环 `score-control`、`EDGE_NOT<=5` 的小安全边数 exact，且部分状态可把最大 exact 分支从 `43` 压到 `26`，并把 `seed=8` 固定输局翻成赢局，但最新整局 spot check 仍会遇到 `40` 路左右的 exact 状态，且本轮还观测到数分钟级慢局，因此 exact 内部候选和分支压缩仍未完成
+- 当前无安全步精确收官虽然已补 exact TT、根结点 exact 路线直切、小得分区 score route 校验、live `scoreRegion` 实时扫描、长链 / 长环 `score-control`、`EDGE_NOT<=5` 的小安全边数 exact，且部分状态可把最大 exact 分支从 `43` 压到 `26`，并把 `seed=8` 固定输局翻成赢局，但最新整局 spot check 仍会遇到 `40` 路左右的 exact 状态，且当前版本 `ts vs ok` 的 2+2 仍耗时约 `9m48s`，因此 exact 内部候选和分支压缩仍未完成
 
 ### 评估函数建议特征
 

@@ -119,7 +119,10 @@ node -e "require('./game.js'); require('./gamedata.js'); require('./player.js');
   - 上一提交已在“`--seed`、无安全步精确收官直切 exact、`exact_root_sacrifice_choice` 回归、根结点无安全步 exact 路线集、live `scoreRegion` 查询实时扫描、长链 / 长环 `score-control` prefix 补齐”后重跑过同口径 2+2 自定义短样本：
     - `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 为 `4:0`
     - `node aivsai.js -1 ts -2 gr -n 2 -s --seed 123` 为 `4:0`
-  - 本轮又补了“小安全边数 late endgame 接 exact，`EXACT_SAFE_EDGE_LIMIT` 提到 `5`”和 `late_safe_window_choice` 回归，并把新发现的 `seed=8` 固定输局翻成赢局，但当前版本尚未重跑同口径 2+2
+  - 本轮又补了“小安全边数 late endgame 接 exact，`EXACT_SAFE_EDGE_LIMIT` 提到 `5`”和 `late_safe_window_choice` 回归，并把新发现的 `seed=8` 固定输局翻成赢局
+  - 当前版本已重跑：
+    - `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 为 `4:0`，总耗时约 `9m48s`
+  - 当前版本对 `gr` 尚未重跑同口径 2+2
   - 当前观测到的单点最大 exact 分支有过 `43 -> 26` 的收缩，但最新整局 spot check 仍会遇到 `40` 路左右的 exact 状态
   - 说明当前版本已经从“Phase 4 初版已接入”推进到“固定输局 seed 已被继续翻正、短样本曾翻到可赢，但 exact 内部仍有缺口且性能仍偏慢”的阶段
 - 未验证浏览器页面、网络对战、观战流程。
@@ -138,10 +141,10 @@ node aivsai.js -1 ts -2 ok -n 5 -s
 当前 `TreeSearchAI` 已经进入“回合级路线搜索 + 搜索核心优化 + Phase 4 结构评估初版”的下一阶段，但还没有达到计划里的目标：
 
 - 目标是对 `ok` 达到 `80%` 胜率
-- 虽然上一提交最新 2+2 自定义短样本已翻成：
+- 虽然当前版本已重跑 `ts vs ok` 的 2+2 自定义短样本并保持：
   - 对 `ok` 为 `4:0`
-  - 对 `gr` 也为 `4:0`
-- 且本轮补了 `EXACT_SAFE_EDGE_LIMIT=5` 后还没重跑同口径 2+2，因此尚不能把当前版本视为已经达到长期稳定的 `80%` 目标
+- 且上一提交里 `ts vs gr` 的同口径 2+2 也为 `4:0`
+- 但样本仍然很小，且当前版本对 `gr` 尚未重跑，同样不能把当前版本视为已经达到长期稳定的 `80%` 目标
 - 说明“候选单位升级”“搜索内核升级”和“评估显式化”都已开始见效，但“强度建模”还没有经过当前版本的大样本验证
 
 ### 2. clone-based 搜索性能偏慢
@@ -151,7 +154,7 @@ node aivsai.js -1 ts -2 ok -n 5 -s
 - 现在最小样本 benchmark 可以较稳定完成
 - 但候选较多的收官局面仍会明显变慢
 - 本轮已补 exact TT，并把部分状态的最大 exact 分支从 `43` 压到 `26`
-- 本轮又补了根结点无安全步直切 exact 路线集、小得分区 score route 兜底、live `scoreRegion` 实时扫描、长链 / 长环 `score-control` prefix，以及 `EDGE_NOT<=5` 的小安全边数 exact 窗口；当前带 seed 的单局 spot check 仍需几十秒到 `1m30s` 左右，且慢局仍可能拖到数分钟量级
+- 本轮又补了根结点无安全步直切 exact 路线集、小得分区 score route 兜底、live `scoreRegion` 实时扫描、长链 / 长环 `score-control` prefix，以及 `EDGE_NOT<=5` 的小安全边数 exact 窗口；当前带 seed 的单局 spot check 仍需几十秒到 `1m30s` 左右，而 `node aivsai.js -1 ts -2 ok -n 2 -s --seed 1` 整体仍耗时约 `9m48s`
 - 旧的 `seed=8` 固定输局已在本轮翻成赢局，但这并不代表 exact 内部候选已经完整；整局里仍会遇到 `40` 路左右的 exact 状态，说明精确分支仍需继续压缩，并重新扫描新的稳定输局样本
 - 更大样本 benchmark 依然不适合直接放大
 - 后续如果要继续提胜率，必须同时优化：
