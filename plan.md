@@ -466,6 +466,7 @@
   - `ring4_sacrifice_choice`
   - `exact_root_sacrifice_choice`
   - `late_safe_window_choice`
+  - `small_chain_sacrifice_middle_preference`
   - `exact_score_prefix_control_only`
   - `boundary_chain_ring_score_prefix`
   - `live_ring8_score_prefix`
@@ -475,6 +476,7 @@
   - `ring4_sacrifice_choice` 当前会固定选出 `2,1`
   - `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
   - `late_safe_window_choice` 当前会固定选出 `12,3`
+  - `small_chain_sacrifice_middle_preference` 当前会固定选出 `11,6`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `1:0`，平均步数 `78`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `1:0`，平均步数 `80`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 8` 为 `1:0`，平均步数 `72`
@@ -506,6 +508,7 @@
     - `top 8` 会把该状态从 `win` 剪成 `loss`
     - `top 12` 会把该状态从 `win` 剪成 `draw`
     - `top 16` 虽保正确性，但单点仍约 `38s`
+  - 已补一个来自 `test_record.md` 的稳定让分回归：在 `L2` / `L4` 同值时，当前会优先选 `L2` 的中间边，而不是把 `L4` 或边界边排到前面
   - 说明下一轮应优先针对 exact sacrifice 的排序和分支压缩继续下刀
 
 ### 评估函数建议特征

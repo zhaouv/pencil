@@ -1145,6 +1145,15 @@ GameData.prototype.getSacrificeEdgeAnalyses=function(){
     for(var ii=0,edge;edge=edges[ii];ii++){
         var next=gameData.clone()
         next.putxy(edge.x,edge.y)
+        var geometryKey=gameData.getEdgeGeometryKey(edge)
+        var geometryParts=geometryKey.split('|')
+        var adjacentCellNum=~~geometryParts[1]
+        var boundaryCount=~~geometryParts[2]
+        var minDist=~~geometryParts[3]
+        var geometryScore=0
+        geometryScore+=adjacentCellNum*20
+        geometryScore+=minDist*12
+        geometryScore-=boundaryCount*10
         var regionIndices=gameData.getEdgeRegionIndices(edge)
         var primaryRegion=null
         for(var jj=0,index;index=regionIndices[jj];jj++){
@@ -1170,6 +1179,7 @@ GameData.prototype.getSacrificeEdgeAnalyses=function(){
         if(isRing && regionSize===4)openScore+=220
         if(isRing)openScore+=40
         if(hasBoundary)openScore+=20
+        if(!isRing && regionSize===2)openScore+=geometryScore*5
         openScore-=afterStats.largeNonRingNum*40
         openScore-=afterStats.largeRingNum*20
         analyses.push({
@@ -1181,7 +1191,8 @@ GameData.prototype.getSacrificeEdgeAnalyses=function(){
             regionSize:regionSize,
             isRing:isRing,
             hasBoundary:hasBoundary,
-            geometryKey:gameData.getEdgeGeometryKey(edge),
+            geometryKey:geometryKey,
+            geometryScore:geometryScore,
             categoryKey:[
                 regionSize<=2?'small':'large',
                 isRing?'ring':'chain',
