@@ -457,6 +457,7 @@
   - `node -e "require('./game.js'); require('./gamedata.js'); require('./player.js'); require('./treeSearch.js'); console.log('core ok')"`
   - `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `1:0`，平均步数 `78`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `0:1`，平均步数 `68`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`，平均步数 `67`
   - `node aivsai.js -1 ts -2 gr -n 1 --seed 123` 为 `1:0`，平均步数 `67`
   - `node aivsai.js -1 ok -2 gr -n 1 -s --seed 123` 可稳定复现 `OK 2胜 GR 0负 (100%)`
