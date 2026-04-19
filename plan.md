@@ -538,6 +538,7 @@
   - `score-control` 已从只覆盖 `chain2 / ring4` 扩到可沿长链 / 长环连续吃到最后控制位
   - 小安全边数的 late endgame 已正式接进 `searchState / searchQuiescence`，当前精确窗口为 `EDGE_NOT<=5`
   - exact 搜索缓存已升级为带 `exact / lower / upper` 的 TT，而不再只有精确值缓存
+  - 当闭区域 sacrifice 候选里存在 `L1/L2` 时，普通 / exact sacrifice route 都会过滤掉 `L3+ / R4+`
 - 已新增固定局面回归脚本 `ts_cases.js`，当前已覆盖：
   - `control_swing_layout`
   - `multi_score_regions`
@@ -555,12 +556,13 @@
   - `node ts_cases.js`
   - `node -e "require('./game.js'); require('./gamedata.js'); require('./player.js'); require('./treeSearch.js'); console.log('core ok')"`
   - `ring4_sacrifice_choice` 当前会固定选出 `2,1`
-  - `exact_root_sacrifice_choice` 当前会固定选出 `8,1`
+  - `exact_root_sacrifice_choice` 当前会固定选出 `11,2`
   - `late_safe_window_choice` 当前会固定选出 `11,12`（同指纹等价代表边）
   - `late_structure_opportunity_handoff_after_12_11` 当前会固定识别为 `lastOpportunityOwnerSign=-1 / lastOpportunityBeneficiarySign=-1`
+  - `exact_sacrifice_simple_region_canonicalization` 当前会固定体现“有 `L1/L2` 时过滤 `L3+ / R4+`，且保留下来的 simple 区域里仅 `L2` 取中间”
   - `small_chain_sacrifice_middle_preference` 当前会固定选出 `11,6`
   - `score_then_small_chain_middle_route` 当前会固定生成 `3,12 -> 11,6`
-  - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `1:0`，平均步数 `78`
+  - `node aivsai.js -1 ts -2 ok -n 1 --seed 1` 为 `1:0`，平均步数 `72`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 4` 为 `1:0`，平均步数 `80`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 8` 为 `1:0`，平均步数 `72`
   - `node aivsai.js -1 ts -2 ok -n 1 --seed 123` 为 `1:0`，平均步数 `71`
@@ -605,7 +607,7 @@
 - `late_safe_window_choice` 的代表边已从旧的 `12,3` 切到同指纹的 `11,12`，回归已放宽为等价代表边断言
 - 新 spot check：
   - `time node ts_cases.js` 当前约 `22.4s`
-  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前为 `TS 1:0 OK`，平均步数 `78`，约 `20.4s`
+  - `time node aivsai.js -1 ts -2 ok -n 1 --seed 1` 当前为 `TS 1:0 OK`，平均步数 `72`，约 `20.4s`
 - 固定局面样例还缺：
   - 边界链与内部链混合
   - 更强的“最后一个决定性结构机会归属 / 交接”断言

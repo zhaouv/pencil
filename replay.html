@@ -1,0 +1,4367 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>点格棋录像</title>
+<style>
+body{font-family:monospace;margin:20px;background:#f9f9f9}
+select,input,button{font-family:monospace;font-size:1em;margin:4px}
+.gametable table{border-spacing:0;border-collapse:collapse}
+.gametable table td{border:none;padding:0;margin:0;width:20px;height:20px}
+.gametable table tr:nth-child(2n+1) td:nth-child(2n),
+.gametable table tr:nth-child(2n) td:nth-child(2n+1){background:#f6f8fa}
+.gametable table tr:nth-child(2n) td:nth-child(2n){background:#fff;width:48px;height:48px}
+.gametable table tr:nth-child(2n+1) td:nth-child(2n+1){background:#ccc}
+.gametable table tr:nth-child(2n+1) td:nth-child(2n):hover,
+.gametable table tr:nth-child(2n) td:nth-child(2n+1):hover{background:#efa}
+.gametable table tr:nth-child(2n) td:nth-child(2n):hover{background:#ffe}
+.gametable table tr:nth-child(2n+1) td:nth-child(2n+1):hover{background:#eeb}
+.gametable table td div{padding:0;margin:0}
+.gametable table tr:nth-child(2n+1) td:nth-child(2n) div{width:48px;height:20px}
+.gametable table tr:nth-child(2n) td:nth-child(2n+1) div{width:20px;height:48px}
+.gametable table tr:nth-child(2n) td:nth-child(2n) div{width:48px;height:48px}
+#gameinfo>div{display:inline-block;padding:4px 12px;margin:4px}
+.info-panel{margin:10px 0;padding:8px;background:#fff;border:1px solid #ddd;border-radius:4px}
+</style></head><body>
+
+<h2>点格棋录像</h2>
+<div class="info-panel" id="summary"></div>
+<div>
+  <select id="selectSet"></select>
+  <select id="selectGame"></select>
+  <button onclick="loadGame()">加载</button>
+</div>
+<div style="margin:8px 0">
+  <button onclick="rpBack()" id="btnBack"><- 后退(←)</button>
+  <button onclick="rpToggle()" id="btnToggle">播放(Space)</button>
+  <button onclick="rpForward()" id="btnForward">前进(→) -></button>
+  <input type="range" id="speed" min="20" max="500" value="200" style="width:100px">
+  <span id="stepInfo">0/0</span>
+  <span style="color:#999">[ ]调速 ↑↓换局</span>
+</div>
+
+<div class="gametable"><table><tbody id="gamemap">
+<tr><td>aaa</td><td>bbb</td><td>ccc</td></tr>
+</tbody></table></div>
+<div id="gameinfo"><div><p>先手 <span>0</span> <span>-</span></p></div><div><p>后手 <span>0</span> <span></span></p></div></div>
+<div id="gametip"></div>
+<input type="hidden" id="gx" value="6">
+<input type="hidden" id="gy" value="6">
+
+<script>
+////////////////// Game //////////////////
+Game=function(){
+    this.xsize=6
+    this.ysize=6
+    this.endImmediately=true
+}
+
+Game.prototype.POINT=1
+Game.prototype.EDGE=0
+Game.prototype.SCORE=2
+Game.prototype.EDGE_USED=-1
+Game.prototype.SCORE_PLAYER=[4,8]
+
+Game.prototype.initMap=function(){
+    var game=this
+    game.winScore=game.ysize*game.xsize
+    game.winScore=game.winScore%2?(game.winScore+1)/2:game.winScore/2
+    game.map=[]
+    for(var jj=0;jj<2*game.ysize+1;jj++){
+        var aa=[]
+        for(var ii=0;ii<2*game.xsize+1;ii++){
+            aa.push((1-(ii+jj)%2)<<((ii%2)*(jj%2)))
+            //格点1, 边0, 得分区域2
+        }
+        game.map.push(aa)
+    }
+    game.history=[]
+}
+Game.prototype.setSize=function(xsize,ysize){
+    var game=this
+    if(xsize)game.xsize=xsize;
+    if(ysize)game.ysize=ysize;
+    game.initMap()
+}
+Game.prototype.xy=function(x,y,value){
+    var game=this
+    if(x<0||x>2*game.xsize)return 'out range';
+    if(y<0||y>2*game.ysize)return 'out range';
+    if(value==null)return game.map[y][x];
+    game.map[y][x]=value
+}
+Game.prototype.initPlayer=function(){
+    var game=this
+    game.playerId=0
+    game.player=[]
+    for(var ii=0;ii<2;ii++){
+        game.player.push({
+            score:0,
+            id:ii,
+            changeTurn:function(callback){game.lock=0},
+            continueTurn:function(callback){},
+            pointer:null,
+        })
+    }
+}
+Game.prototype.firstStep=function(callback){
+    var game=this
+    game.player[game.playerId].changeTurn(callback)
+    return game
+}
+
+Game.prototype.putxy=function(x,y,callback){
+    var game=this
+    if(game.lock){
+        if(callback)callback(null,'lock');
+        return 'lock';
+    }
+    if(game.xy(x,y)!==game.EDGE){
+        if(callback)callback(null,'Invalid click');
+        return 'Invalid click';
+    }
+    game.xy(x,y,game.EDGE_USED)
+    game.history.push([x,y,game.playerId])
+    // game.changeEdge
+    game.changeEdge.forEach(function(f){f(x,y)})
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+    var score=false
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx=x+d.x, yy=y+d.y
+        if(game.xy(xx,yy)===game.SCORE){
+            var complete = true
+            for(var jj=0,dd;dd=directions[jj];jj++){
+                var xxx=xx+dd.x, yyy=yy+dd.y
+                complete = complete && (game.xy(xxx,yyy)===game.EDGE_USED)
+            }
+            if(complete){
+                score=true
+                game.xy(xx,yy,game.SCORE_PLAYER[game.playerId])
+                game.player[game.playerId].score++
+                // game.changeScore
+                game.changeScore.forEach(function(f){f(xx,yy,game.playerId,game.player[game.playerId].score)})
+                if(game.player[game.playerId].score>=game.winScore){
+                    var endnow=true
+                    if(game.winnerId==null){
+                        game.winnerId=game.playerId
+                    }
+                    if(!game.endImmediately){
+                        endnow=(game.player[0].score+game.player[0].score==game.ysize*game.xsize)
+                    }
+                    if(endnow){
+                        game.win.forEach(function(f){f(game.winnerId)})
+                        if(callback)callback('win',null);
+                        return 'win'+game.playerId
+                    }
+                }
+            }
+        }
+    }
+    if(score){
+        game.player[game.playerId].continueTurn(callback)
+        return 'continueTurn'
+    } else {
+        game.playerId=1-game.playerId
+        game.changePlayer.forEach(function(f){f(game.playerId)})
+        game.player[game.playerId].changeTurn(callback)
+        return 'changeTurn'
+    }
+}
+Game.prototype.init=function(xsize,ysize){
+    var game=this
+    game.lock=1
+    game.setSize(xsize,ysize)
+    game.initPlayer()
+    game.winnerId=null
+    
+    game.changeEdge=[]//function(x,y){}
+    game.changeScore=[]//function(x,y,playerId,score){}
+    game.changePlayer=[]//function(playerId){}
+    game.win=[]//function(playerId){}
+
+    game.win.push(function(playerId){
+        game.lock=1
+    })
+
+    return game
+}
+
+////////////////// gameview //////////////////
+gameview={}
+
+gameview.playerColor=['#fbb','#bbf']
+
+gameview.initTable=function(){
+    var game=gameview.game
+    var hstr=''
+    for(var jj=0;jj<2*game.ysize+1;jj++){
+        hstr+='<tr>'
+        for(var ii=0;ii<2*game.xsize+1;ii++){
+            hstr+=['<td><div title="',ii,',',jj,'"></div></td>'].join('')
+        }
+        hstr+='</tr>\n'
+    }
+    gameview.gamemap.innerHTML=hstr
+}
+gameview.xy=function(x,y){return gameview.gamemap.children[y].children[x]}
+gameview.printtip=function(tip){
+    gameview.gametip.innerText=tip
+}
+gameview.listenTable=function(){
+    setTimeout(function(){
+        var game=gameview.game
+        for(var jj=0;jj<2*game.ysize+1;jj++){
+            for(var ii=0;ii<2*game.xsize+1;ii++){
+                if((ii+jj)%2===0)continue;
+                (function(ii,jj){
+                    gameview.xy(ii,jj).children[0].onclick=function(){
+                        game.putxy(ii,jj)
+                    }
+                })(ii,jj)
+            }
+        }
+    },100)
+}
+gameview.buildTable=function(){
+    gameview.initTable()
+    gameview.listenTable()
+}
+gameview.listenGame=function(){
+    var game=gameview.game
+    var lastedge = null
+    game.changeEdge.push(function(x,y){
+        if(lastedge)gameview.xy(lastedge[0],lastedge[1]).children[0].style.background='#ccc'
+        gameview.xy(x,y).children[0].style.background='#888'
+        lastedge=[x,y]
+    })
+    game.changeScore.push(function(x,y,playerId,score){
+        gameview.xy(x,y).children[0].style.background=gameview.playerColor[playerId]
+        gameview.gameinfo.children[playerId].children[0].children[0].innerHTML=score
+    })
+    game.changePlayer.push(function(playerId){
+        gameview.gameinfo.children[playerId].children[0].children[1].innerHTML='-'
+        gameview.gameinfo.children[1-playerId].children[0].children[1].innerHTML=''
+        gameview.gameinfo.children[playerId].style.background=gameview.playerColor[playerId]
+        gameview.gameinfo.children[1-playerId].style.background=''
+    })
+    game.win.push(function(playerId){
+        gameview.gameinfo.children[playerId].children[0].children[1].innerHTML='win'
+    })
+    game.win.push(function(playerId){
+        setTimeout(function(){
+            var replay=confirm((playerId==0?'先手玩家':'后手玩家')+' win, replay?')
+            if(replay)resetgame(first2);
+        },30)
+    })
+}
+gameview.init=function(game,hasInited){
+    gameview.gamemap = document.getElementById('gamemap')
+    gameview.gameinfo = document.getElementById('gameinfo')
+    gameview.gametip = document.getElementById('gametip')
+    gameview.x = document.getElementById('gx')
+    gameview.y = document.getElementById('gy')
+
+    var ss = window.location.search
+    if(ss.indexOf('url=')!==-1){
+        gameview.urlstr=ss.split('url=')[1].split('&')[0]
+    }
+
+    gameview.gameinfo.children[0].style.background=gameview.playerColor[0]
+    gameview.gameinfo.children[1].style.background=''
+    gameview.gameinfo.children[0].children[0].children[0].innerHTML='0'
+    gameview.gameinfo.children[1].children[0].children[0].innerHTML='0'
+    gameview.gameinfo.children[0].children[0].children[1].innerHTML='-'
+    gameview.gameinfo.children[1].children[0].children[1].innerHTML=''
+    gameview.game=game
+    if(hasInited){
+        gameview.x.value=game.xsize
+        gameview.y.value=game.ysize
+    } else {
+        game.init(~~gameview.x.value,~~gameview.y.value)
+    }
+    gameview.buildTable()
+    gameview.listenGame()
+    return gameview
+}
+
+////////////////// ReplayController //////////////////
+ReplayController=function(){
+
+}
+
+ReplayController.prototype.init=function(game,gameview){
+    var rc = this
+    rc.game=game
+    rc.gameview=gameview
+    return rc
+}
+
+ReplayController.prototype.replay=function(step,time,callback){
+    var rc = this
+    var newgame = new Game().init(rc.game.xsize,rc.game.ysize)
+    rc.newgame = newgame
+    if(step=='last'){
+        if(rc.game.history.length>=2){
+            var index=rc.game.history.length-2
+            var lastplayer=rc.game.history[rc.game.history.length-1][2]
+            while(index>0){
+                if(rc.game.history[index][2]!==lastplayer)break;
+                index--;
+            }
+            step=index
+        } else {
+            step=null
+        }
+    }
+    if(step==null)step=rc.game.history.length;
+    if(time==null)time=10;
+    rc.player1 = new LocalPlayer().init(newgame,rc.gameview)
+    rc.player2 = new LocalPlayer().init(newgame,rc.gameview)
+    if(rc.gameview){
+        var game=newgame
+        rc.gameview.init(game,'hasInited')
+    }
+    var stepfunc=function(cb){
+        newgame.lock=1
+        var func=function(){
+            nowstep=newgame.history.length
+            if(nowstep<step){
+                newgame.lock=0
+                newgame.putxy(rc.game.history[nowstep][0],rc.game.history[nowstep][1])
+            } else {
+                rc.player1.remove()
+                rc.player2.remove()
+                newgame.lock=1
+                if(callback){
+                    callback(newgame,rc.gameview)
+                } else {
+                    newgame.lock=0
+                    player2 = new LocalPlayer().init(newgame,rc.gameview).bind(1)
+                    player1 = new LocalPlayer().init(newgame,rc.gameview).bind(0)
+                    newgame.firstStep()
+                }
+            }
+        }
+        if(time){
+            setTimeout(func,time)
+        } else {
+            func()
+        }
+    }
+    rc.player1.changeTurn=rc.player1.continueTurn=stepfunc
+    rc.player2.changeTurn=rc.player2.continueTurn=stepfunc
+    rc.player2.bind(1)
+    rc.player1.bind(0)
+    //newgame.firstStep()
+    
+    return newgame
+}
+//gamea=JSON.parse( JSON.stringify(game));game=new ReplayController().init(gamea,gameview).replay('last',120,null).firstStep()
+////////////////// GameData //////////////////
+GameData=function(){
+    this.endImmediately=true
+}
+/* 
+console.log(gameview.game,new GameData().fromGame(gameview.game))
+game=new GameData().fromGame(gameview.game)
+
+GameData {endImmediately: true, xsize: 6, ysize: 6, winScore: 18, totalScore: 36, …}
+area : (6) [Array(6), Array(6), Array(6), Array(6), Array(6), Array(6)]
+connectedRegion : {}
+edgeCount : {1: 0, 10: 84, 100: 0, -100000: 0}
+endImmediately : true
+map : (13) [Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13), Array(13)]
+maxIndex : 0
+player : (2) [{…}, {…}]
+playerId : 0
+regionNum : 0
+scoreCount : {10000: 36, 10001: 0, 10002: 0, 10003: 0, 10004: 0}
+scoreRegion : []
+totalScore : 36
+winScore : 18
+winnerId : null
+xsize : 6
+ysize : 6
+__proto__ : Object
+*/
+GameData.prototype.xy=function(x,y,value){
+    if(x<0||x>2*this.xsize)return 'out range';
+    if(y<0||y>2*this.ysize)return 'out range';
+    if(value==null)return this.map[y][x];
+    this.map[y][x]=value
+}
+GameData.prototype.count=function(x,y,number){
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+    var count=0
+    var _cmp=function(a,b){return a===b}
+    if(typeof(number)!==typeof(1))_cmp=function(a,b){return b.indexOf(a)!==-1};
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx=x+d.x, yy=y+d.y
+        if(_cmp(this.xy(xx,yy),number))count++;
+    }
+    return count
+}
+// game.POINT=1   =>   -1000
+// game.EDGE=0   =>   [1,10,100] [立刻得分,不得分,差一手得分]
+// game.SCORE=2   =>   [10000,10001,10002,10003] 周围边的完成数
+// game.EDGE_USED=-1   =>   -100000
+// game.SCORE_PLAYER=[4,8]   =>   10004 周围边的完成数
+// ↓
+GameData.prototype.POINT=-888
+GameData.prototype.EDGE_USED=-999
+GameData.prototype.EDGE_NOW=1111
+GameData.prototype.EDGE_WILL=2222
+GameData.prototype.EDGE_NOT=3333
+GameData.prototype.SCORE_0=1000
+GameData.prototype.SCORE_1=1001
+GameData.prototype.SCORE_2=1002
+GameData.prototype.SCORE_3=1003
+GameData.prototype.SCORE_4=1004
+// game.POINT              点
+// game.EDGE_USED          用过的边
+// game.EDGE_NOW           立刻得分的边
+// game.EDGE_WILL          下完后下一笔能立刻得分的边
+// game.EDGE_NOT           下完双方不得分的边
+// game.SCORE_0            周围有0个边的分
+// game.SCORE_1            周围有1个边的分
+// game.SCORE_2            周围有2个边的分
+// game.SCORE_3            周围有3个边的分
+// game.SCORE_4            周围有4个边的分
+GameData.prototype.fromGame=function(game){
+    var _game=this
+    _game.xsize=game.xsize
+    _game.ysize=game.ysize
+    _game.winScore=game.winScore
+    _game.totalScore=game.xsize*game.ysize
+    _game.playerId=game.playerId
+    _game.winnerId=game.winnerId
+    _game.player=[]
+    for(var ii=0;ii<2;ii++){
+        _game.player.push({
+            score:game.player[ii].score,
+            id:ii,
+        })
+    }
+    _game.map=_game.cloneObj(game.map)
+    _game.edgeCount={}
+    _game.edgeCount[_game.EDGE_USED]=0
+    _game.edgeCount[_game.EDGE_NOW]=0
+    _game.edgeCount[_game.EDGE_WILL]=0
+    _game.edgeCount[_game.EDGE_NOT]=0
+    _game.scoreCount={}
+    _game.scoreCount[_game.SCORE_0]=0
+    _game.scoreCount[_game.SCORE_1]=0
+    _game.scoreCount[_game.SCORE_2]=0
+    _game.scoreCount[_game.SCORE_3]=0
+    _game.scoreCount[_game.SCORE_4]=0
+    for(var jj=1;jj<2*game.ysize+1;jj+=2){
+        for(var ii=1;ii<2*game.xsize+1;ii+=2){
+            var thiscount=_game.SCORE_0+_game.count(ii,jj,game.EDGE_USED)
+            _game.xy(ii,jj,thiscount)
+            _game.scoreCount[thiscount]++
+        }
+    }
+    for(var jj=0;jj<2*game.ysize+1;jj++){
+        for(var ii=0;ii<2*game.xsize+1;ii++){
+            if((ii+jj)%2===0){
+                if(ii%2===0)_game.xy(ii,jj,_game.POINT);
+            } else {
+                if(_game.xy(ii,jj)===game.EDGE_USED){
+                    _game.xy(ii,jj,_game.EDGE_USED)
+                    _game.edgeCount[_game.EDGE_USED]++
+                } else if(_game.count(ii,jj,_game.SCORE_3)){
+                    _game.xy(ii,jj,_game.EDGE_NOW)
+                    _game.edgeCount[_game.EDGE_NOW]++
+                } else if (_game.count(ii,jj,_game.SCORE_2)) {
+                    _game.xy(ii,jj,_game.EDGE_WILL)
+                    _game.edgeCount[_game.EDGE_WILL]++
+                } else {
+                    _game.xy(ii,jj,_game.EDGE_NOT)
+                    _game.edgeCount[_game.EDGE_NOT]++
+                }
+            }
+        }
+    }
+    _game.initConnectedRegion()
+    _game.clearTransientCache()
+    return _game
+}
+GameData.prototype.cloneObj = function (data) {
+    //深拷贝一个对象
+    //return eval(JSON.stringify(data))
+    if (data==null) return data;
+    // array
+    if (data instanceof Array) {
+        var copy=[];
+        // for (var i=0;i<data.length;i++) {
+        for (var i in data) {
+            copy[i] = this.cloneObj(data[i]);
+        }
+        return copy;
+    }
+    // object
+    if (data instanceof Object) {
+        var copy={};
+        for (var i in data) {
+            if (data.hasOwnProperty(i))
+                copy[i]=this.cloneObj(data[i]);
+        }
+        return copy;
+    }
+    return data;
+}
+GameData.prototype.clearTransientCache=function(){
+    this.__regions=null
+    this.__scoreRegions=null
+    this.__closedRegions=null
+    this.__smallRegions=null
+    this.__largeRegions=null
+    this.__ringRegions=null
+    this.__regionStats=null
+    this.__evalFeatures=null
+    this.__structureFingerprint=null
+    this.__controlFingerprint=null
+    this.__safeEdgeAnalyses=null
+    this.__sacrificeEdgeAnalyses=null
+    this.__irrelevantEdges=null
+    this.__controlSwingStructures=null
+    this.__structureOpportunitySummary=null
+    this.__structureOpportunitySummaryWithBeneficiary=null
+    this.__boardKey=null
+}
+GameData.prototype.clone=function(){
+    var game=this
+    var _game=new GameData()
+    _game.endImmediately=game.endImmediately
+    _game.xsize=game.xsize
+    _game.ysize=game.ysize
+    _game.winScore=game.winScore
+    _game.totalScore=game.totalScore
+    _game.playerId=game.playerId
+    _game.winnerId=game.winnerId
+    _game.regionNum=game.regionNum
+    _game.maxIndex=game.maxIndex
+    _game.player=[
+        {score:game.player[0].score,id:game.player[0].id},
+        {score:game.player[1].score,id:game.player[1].id},
+    ]
+    _game.map=game.map.map(function(row){
+        return row.slice()
+    })
+    _game.area=game.area.map(function(row){
+        return row.slice()
+    })
+    _game.edgeCount={}
+    for(var edgeType in game.edgeCount){
+        _game.edgeCount[edgeType]=game.edgeCount[edgeType]
+    }
+    _game.scoreCount={}
+    for(var scoreType in game.scoreCount){
+        _game.scoreCount[scoreType]=game.scoreCount[scoreType]
+    }
+    _game.scoreRegion=game.scoreRegion.slice()
+    _game.connectedRegion={}
+    for(var index in game.connectedRegion){
+        var region=game.connectedRegion[index]
+        if(!region){
+            _game.connectedRegion[index]=null
+            continue
+        }
+        _game.connectedRegion[index]={
+            block:region.block.map(function(pt){
+                return {'x':pt.x,'y':pt.y}
+            }),
+            isRing:region.isRing,
+            index:region.index,
+        }
+    }
+    _game.clearTransientCache()
+    return _game
+}
+GameData.prototype.initConnectedRegion=function(){
+    var game=this
+    var visited = eval('['+Array(game.ysize+1).join('['+Array(game.xsize+1).join('false,')+'],')+']') // ysize*xsize的false
+    var v=function(x,y,value){
+        if(x<0||x>2*game.xsize)return true;
+        if(y<0||y>2*game.ysize)return true;
+        if(game.xy(x,y)!==game.SCORE_2 && game.xy(x,y)!==game.SCORE_3)visited[y>>1][x>>1]=true; // 不关心开放区域和已经被拿的分
+        if(value==null)return visited[y>>1][x>>1];
+        visited[y>>1][x>>1]=value
+    }
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+    game.connectedRegion={}
+    var stack10003 = [] // 能得分的区域
+    game.scoreRegion=stack10003 
+    var regionNum=0
+    for(var y=1;y<2*game.ysize+1;y+=2){
+        for(var x=1;x<2*game.xsize+1;x+=2){
+            // --x,y-- 
+            if(v(x,y))continue;
+            regionNum++
+            var queue=[{'x':x,'y':y}] // 把初始点加入队列
+            var region={
+                block:[],
+                isRing:false,
+                index:regionNum,
+            } // 创建一个联通区域对象
+            while(queue.length){
+                var now = queue.shift()
+                region.block.push(now) // 此处只是加到集合, 集合内部不反应格子的连接
+                // TODO: 如果此处带判断的选择使用push还是unshift, 之后就无需再单独把集合变成反应连接的结构了
+                v(now.x,now.y,true)
+                if(game.xy(now.x,now.y)===game.SCORE_3){
+                    // 当一个区域第一次发现能得分的格子时, 加入得分区域, 
+                    // 第二次时标记为有环区域
+                    if(stack10003.indexOf(region.index)===-1){
+                        stack10003.push(region.index)
+                    }
+                    else region.isRing=true;
+                }
+                for(var ii=0,d;d=directions[ii];ii++){
+                    // 判断四周的格式是否加到队列
+                    var xx=now.x+d.x*2, yy=now.y+d.y*2
+                    if(game.xy(now.x+d.x,now.y+d.y)!==game.EDGE_WILL && game.xy(now.x+d.x,now.y+d.y)!==game.EDGE_NOW)continue;
+                    if(v(xx,yy))continue;
+                    queue.push({'x':xx,'y':yy})
+                }
+            }
+            game.connectedRegion[region.index]=region
+            // --x,y-- 
+        }
+    }
+    game.regionNum=regionNum
+    game.maxIndex=regionNum
+    game.area = eval('['+Array(game.ysize+1).join('['+Array(game.xsize+1).join('0,')+'],')+']') // ysize*xsize的0
+    for(var index in game.connectedRegion){
+        var region=game.connectedRegion[index]
+        for(var ii=0,pt;pt=region.block[ii];ii++){
+            game.areaxy(pt.x,pt.y,index)
+        }
+    }
+    //重新排列各region, 并检测无法立刻得分的闭区域是否有环
+    for(var index in game.connectedRegion){
+        // 这里要注意index是字符串,不能用===
+        var region=game.connectedRegion[index]
+        if(region.block.length<=2)continue; // 长度小于2的自然是连接在一起的
+        var now=region.block[0]
+        var stack=[]
+        for(var ii=0,d;d=directions[ii];ii++){
+            var x=now.x+d.x*2, y=now.y+d.y*2
+            if(game.areaxy(x,y)==index && game.xy(now.x+d.x,now.y+d.y)!==game.EDGE_USED)stack.push({'x':x,'y':y})
+        }
+        var visited = eval('['+Array(game.ysize+1).join('['+Array(game.xsize+1).join('false,')+'],')+']') // ysize*xsize的false
+        var v=function(x,y,value){
+            if(x<0||x>2*game.xsize)return true;
+            if(y<0||y>2*game.ysize)return true;
+            if(game.areaxy(x,y)!=index)visited[y>>1][x>>1]=true;
+            if(value==null)return visited[y>>1][x>>1];
+            visited[y>>1][x>>1]=value
+        }
+        v(now.x,now.y,true)
+        var link=function(pt,fadd){
+            var queue=[pt]
+            while(queue.length){
+                var pt = queue.shift()
+                v(pt.x,pt.y,true)
+                fadd(pt)
+                for(var ii=0,d;d=directions[ii];ii++){
+                    var xx=pt.x+d.x*2, yy=pt.y+d.y*2
+                    if(game.xy(pt.x+d.x,pt.y+d.y)!==game.EDGE_WILL && game.xy(pt.x+d.x,pt.y+d.y)!==game.EDGE_NOW)continue;
+                    if(v(xx,yy))continue;
+                    queue.push({'x':xx,'y':yy})
+                }
+            }
+        }
+        var newblock=[now]
+        link(stack[0],function(pt){newblock.push(pt)})
+        if(stack.length>1){
+            if(v(stack[1].x,stack[1].y)===true){
+                region.isRing=true
+            } else {
+                link(stack[1],function(pt){newblock.unshift(pt)})
+            }
+        }
+        region.block=newblock
+    }
+}
+GameData.prototype.areaxy=function(x,y,value){
+    var game=this
+    if(x<0||x>2*game.xsize)return 'out range';
+    if(y<0||y>2*game.ysize)return 'out range';
+    if(value==null)return game.area[y>>1][x>>1];
+    game.area[y>>1][x>>1]=~~value
+}
+// game.POINT              点
+// game.EDGE_USED          用过的边
+// game.EDGE_NOW           立刻得分的边
+// game.EDGE_WILL          下完后下一笔能立刻得分的边
+// game.EDGE_NOT           下完双方不得分的边
+// game.SCORE_0            周围有0个边的分
+// game.SCORE_1            周围有1个边的分
+// game.SCORE_2            周围有2个边的分
+// game.SCORE_3            周围有3个边的分
+// game.SCORE_4            周围有4个边的分
+GameData.prototype.putxy=function(x,y){
+    var game=this
+    game.clearTransientCache()
+    var edgebefore=game.xy(x,y)
+    game.xy(x,y,game.EDGE_USED)
+    game.edgeCount[edgebefore]--
+    game.edgeCount[game.EDGE_USED]++
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+    var score=false
+    var temp=[]
+    for(var ii=0,d;d=directions[ii];ii++){ 
+        // 其中两个是点, 两个是相邻的区域
+        var xx=x+d.x, yy=y+d.y
+        var scorebefore=game.xy(xx,yy)
+        if(scorebefore===game.POINT || scorebefore==='out range')continue;
+        // if(scorebefore===game.SCORE_4)continue; 不可能发生
+        scorenow=scorebefore+1
+        game.xy(xx,yy,scorenow)
+        game.scoreCount[scorebefore]--
+        game.scoreCount[scorenow]++
+        //维护联通区域
+        if(scorenow===game.SCORE_1){
+            //不需要做任何事
+        } else if(scorenow===game.SCORE_2){
+            //把剩下的两条边中的game.EDGE_NOT标记为game.EDGE_WILL
+            for(var jj=0,dd;dd=directions[jj];jj++){
+                var xxx=xx+dd.x, yyy=yy+dd.y
+                if(game.xy(xxx,yyy)!==game.EDGE_NOT)continue;
+                game.xy(xxx,yyy,game.EDGE_WILL)
+                game.edgeCount[game.EDGE_NOT]--
+                game.edgeCount[game.EDGE_WILL]++
+            }
+            //维护联通区域
+            var links=[]
+            for(var jj=0,dd;dd=directions[jj];jj++){
+                var xxx=xx+dd.x, yyy=yy+dd.y
+                if(game.xy(xxx,yyy)===game.EDGE_USED)continue;
+                var index_next=game.areaxy(xx+2*dd.x,yy+2*dd.y)
+                links.push({
+                    //directionindex:jj,
+                    index:index_next==='out range'?0:index_next,
+                    //direction:dd,
+                    x:xx+2*dd.x,
+                    y:yy+2*dd.y
+                })
+            }
+            var index=links[0].index
+            var region=game.connectedRegion[index]
+            //形成环
+            if(index===links[1].index && index!=0){
+                region.block.push({'x':xx,'y':yy})
+                region.isRing=true
+                game.areaxy(xx,yy,index)
+                continue
+            }
+            //新区域
+            if(index===links[1].index && index==0){
+                game.regionNum++
+                game.maxIndex++
+                region={
+                    block:[{'x':xx,'y':yy}],
+                    isRing:false,
+                    index:game.maxIndex,
+                }
+                game.connectedRegion[region.index]=region
+                game.areaxy(xx,yy,region.index)
+                continue
+            }
+            //其中一个区域上加一格
+            if(index==0 || links[1].index==0){
+                links[0]=index!=0?links[0]:links[1]
+                index=links[0].index
+                region=game.connectedRegion[index]
+                if(region.block[0].x==links[0].x && region.block[0].y==links[0].y){
+                    region.block.unshift({'x':xx,'y':yy})
+                } else {
+                    region.block.push({'x':xx,'y':yy})
+                }
+                game.areaxy(xx,yy,index)
+                continue
+            }
+            //合并两个区域
+            if(region.block[0].x==links[0].x && region.block[0].y==links[0].y)region.block.reverse();
+            var region2=game.connectedRegion[links[1].index]
+            if(!(region2.block[0].x==links[1].x && region2.block[0].y==links[1].y))region2.block.reverse();
+            region.block=region.block.concat([{'x':xx,'y':yy}]).concat(region2.block)
+            game.areaxy(xx,yy,index)
+            for(var jj=0,pt;pt=region2.block[jj];jj++){
+                game.areaxy(pt.x,pt.y,index)
+            }
+            var index2index=game.scoreRegion.indexOf(region2.index)
+            if(index2index!==-1){
+                game.scoreRegion.splice(index2index,1)
+                if(game.scoreRegion.indexOf(index)!==-1){
+                    region.isRing=true;
+                } else {
+                    game.scoreRegion.push(index)
+                }
+            }
+            game.connectedRegion[region2.index]=null
+            game.regionNum--
+        } else if(scorenow===game.SCORE_3){
+            //把剩下的一条边标记为 game.EDGE_NOW
+            for(var jj=0,dd;dd=directions[jj];jj++){
+                var xxx=xx+dd.x, yyy=yy+dd.y
+                var edgebefore_nextby=game.xy(xxx,yyy)
+                if([game.EDGE_NOT,game.EDGE_WILL].indexOf(edgebefore_nextby)===-1)continue;
+                game.xy(xxx,yyy,game.EDGE_NOW)
+                game.edgeCount[edgebefore_nextby]--
+                game.edgeCount[game.EDGE_NOW]++
+                break
+            }
+            //处理联通区域
+            var index = game.areaxy(xx,yy)
+            var region=game.connectedRegion[index]
+            //有环区域
+            if(region.isRing && ii<2){
+                for(var jj=0,pt;pt=region.block[jj];jj++){
+                    if(pt.x==xx && pt.y==yy)break;
+                }
+                temp[0]=jj
+                continue
+            }
+            if(region.isRing){
+                for(var jj=0,pt;pt=region.block[jj];jj++){
+                    if(pt.x==xx && pt.y==yy)break;
+                }
+                if(Math.abs(jj-temp[0])!=1)continue;
+                jj=Math.max(jj,temp[0])
+                if(game.scoreRegion.indexOf(index)===-1){
+                    var newblock = region.block.slice(jj)
+                    newblock=newblock.concat(region.block.slice(0,jj))
+                    region.block=newblock
+                    game.scoreRegion.push(index)
+                } else {
+                    //环被取了最边缘的
+                    if(jj===1 || jj===region.block.length-1)continue;
+                    //一个环分裂成两个环
+                    var newblock = region.block.slice(jj)
+                    region.block=region.block.slice(0,jj)
+                    game.regionNum++
+                    game.maxIndex++
+                    var newregion={
+                        block:newblock,
+                        isRing:true,
+                        index:game.maxIndex,
+                    }
+                    game.scoreRegion.push(newregion.index)
+                    game.connectedRegion[newregion.index]=newregion
+                    for(var jj=0,pt;pt=newregion.block[jj];jj++){
+                        game.areaxy(pt.x,pt.y,newregion.index)
+                    }
+                }
+                continue
+            }
+            //无环区域的边缘
+            if(game.areaxy(x-d.x, y-d.y)!=index){
+                if(game.scoreRegion.indexOf(index)===-1){
+                    game.scoreRegion.push(index)
+                } else if(!score){
+                    region.isRing=true
+                }
+                continue
+            }
+            //无环区域的中心
+            if(ii<2)continue;
+            for(var jj=0,pt;pt=region.block[jj];jj++){
+                if(pt.x==xx && pt.y==yy)break;
+                if(pt.x==x-d.x && pt.y==y-d.y)break;
+            }
+            jj+=1;
+            if(game.scoreRegion.indexOf(index)===-1){
+                //分裂
+                var newblock = region.block.slice(jj)
+                region.block=region.block.slice(0,jj)
+                game.regionNum+=1
+                game.maxIndex+=1
+                var newregion={
+                    block:newblock,
+                    isRing:false,
+                    index:game.maxIndex,
+                }
+                game.scoreRegion.push(index)
+                game.scoreRegion.push(newregion.index)
+                game.connectedRegion[newregion.index]=newregion
+                for(var jj=0,pt;pt=newregion.block[jj];jj++){
+                    game.areaxy(pt.x,pt.y,newregion.index)
+                }
+            } else {
+                //被取了最边缘的
+                if(jj===1 || jj===region.block.length-1)continue;
+                //分裂
+                var newblock = region.block.slice(jj)
+                region.block=region.block.slice(0,jj)
+                game.regionNum+=1
+                game.maxIndex+=1
+                var newregion={
+                    block:newblock,
+                    isRing:false,
+                    index:game.maxIndex,
+                }
+                game.scoreRegion.push(newregion.index)
+                game.connectedRegion[newregion.index]=newregion
+                for(var jj=0,pt;pt=newregion.block[jj];jj++){
+                    game.areaxy(pt.x,pt.y,newregion.index)
+                }
+                if(game.xy(region.block[0].x,region.block[0].y)===game.SCORE_3)region.isRing=true;
+                if(game.xy(newregion.block[newregion.block.length-1].x,newregion.block[newregion.block.length-1].y)===game.SCORE_3)newregion.isRing=true;
+            }
+        } else if(scorenow===game.SCORE_4){
+            //有图块完成,更新分数
+            score=true
+            game.player[game.playerId].score++
+            if(game.winnerId==null && game.player[game.playerId].score==game.winScore){
+                game.winnerId=game.playerId
+                if(game.endImmediately)return 'win';
+            }
+            //更新联通区域
+            var index = game.areaxy(xx,yy)
+            game.areaxy(xx,yy,0)
+            var region=game.connectedRegion[index]
+            if(region.block.length===1){
+                game.regionNum--
+                game.connectedRegion[index]=null
+                game.scoreRegion.splice(game.scoreRegion.indexOf(index),1)
+            } else {
+                if(region.block[0].x===xx && region.block[0].y===yy){
+                    region.block=region.block.slice(1)
+                } else {
+                    region.block=region.block.slice(0,-1)
+                }
+            }
+        }
+    }
+    if(score){
+        return 'continueTurn'
+    } else {
+        game.playerId=1-game.playerId
+        return 'changeTurn'
+    }
+}
+////////////////// Functions for AIPlayer //////////////////
+GameData.prototype.getOneEdgeFromRegion=function(region){
+    // this region must be in score region
+    // not check here for effectiveness
+    var gameData=this
+    if(!region || !region.block || !region.block.length)return null
+    var len = region.block.length
+    var stack = region.block
+    var p1=0
+    var p2=1
+    if(gameData.xy(stack[0].x,stack[0].y)!==gameData.SCORE_3){
+        p1=len-1
+        p2=len-2
+    }
+    if(len>1)return {'x':(stack[p1].x+stack[p2].x)/2,'y':(stack[p1].y+stack[p2].y)/2};
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx=stack[p1].x+d.x, yy=stack[p1].y+d.y
+        if(gameData.xy(xx,yy)!==gameData.EDGE_USED)return {'x':xx,'y':yy};
+    }
+}
+GameData.prototype.getOneEdgeFromRegionIndex=function(regionIndex){
+    // this region must be in score region
+    // not check here for effectiveness
+    return this.getOneEdgeFromRegion(this.connectedRegion[regionIndex])
+}
+GameData.prototype.getAllEdgesFromRegion=function(region){
+    // this region must be in score region
+    // not check here for effectiveness
+    var gameData=this
+    if(!region || !region.block || !region.block.length)return []
+    var way=[]
+    var len = region.block.length
+    var stack = region.block
+    var p1=0
+    var pend=len-1
+    var pd=1
+    if(gameData.xy(stack[0].x,stack[0].y)!==gameData.SCORE_3){
+        p1=len-1
+        pend=0
+        pd=-1
+    }
+    for(var pp=p1;pp!=pend;pp+=pd){
+        var qq=pp+pd
+        way.push({'x':(stack[pp].x+stack[qq].x)/2,'y':(stack[pp].y+stack[qq].y)/2})
+    }
+    if(!region.isRing){
+        var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+        for(var ii=0,d;d=directions[ii];ii++){
+            var xx=stack[pend].x+d.x, yy=stack[pend].y+d.y
+            var xxx=stack[pend].x+2*d.x, yyy=stack[pend].y+2*d.y
+            if(gameData.xy(xxx,yyy)=='out range'){
+                way.push({'x':xx,'y':yy})
+                break
+            }
+        }
+    }
+    if(way.length){
+        var probe=gameData.clone()
+        var valid=true
+        for(var jj=0,edge;edge=way[jj];jj++){
+            if(probe.xy(edge.x,edge.y)!==probe.EDGE_NOW){
+                valid=false
+                break
+            }
+            probe.putxy(edge.x,edge.y)
+        }
+        if(valid)return way
+        if(region.block.length>2)return way
+    }
+
+    var current=gameData.clone()
+    var remain={}
+    for(var kk=0,pt;pt=region.block[kk];kk++){
+        remain[[pt.x,pt.y].join(',')]=true
+    }
+    way=[]
+    var guard=region.block.length
+    while(guard>0 && current.playerId===gameData.playerId && current.edgeCount[current.EDGE_NOW]){
+        guard--
+        var scoreRegions=current.getScoreRegions()
+        var currentRegion=null
+        for(var ll=0,item;item=scoreRegions[ll];ll++){
+            for(var mm=0,cell;cell=item.block[mm];mm++){
+                if(!remain[[cell.x,cell.y].join(',')])continue
+                currentRegion=item
+                break
+            }
+            if(currentRegion)break
+        }
+        if(!currentRegion)break
+        var nextEdge=current.getOneEdgeFromRegion(currentRegion)
+        if(!nextEdge || current.xy(nextEdge.x,nextEdge.y)!==current.EDGE_NOW)return []
+        way.push({'x':nextEdge.x,'y':nextEdge.y})
+        current.putxy(nextEdge.x,nextEdge.y)
+    }
+    return way
+}
+GameData.prototype.getAllEdgesFromRegionIndex=function(regionIndex){
+    // this region must be in score region
+    // not check here for effectiveness
+    return this.getAllEdgesFromRegion(this.connectedRegion[regionIndex])
+}
+GameData.prototype.getMinConnectedRegion=function(){
+    var gameData=this
+    var minRegion=null
+    for(var ii in gameData.connectedRegion){
+        var region = gameData.connectedRegion[ii]
+        if(!region)continue;
+        if(minRegion==null || region.block.length<minRegion.block.length)minRegion=region;
+    }
+    return minRegion
+}
+GameData.prototype.getAllEdgesByType=function(number){
+    var gameData=this
+    var edges=[]
+    for(var y=0;y<2*gameData.ysize+1;y++){
+        for(var x=0;x<2*gameData.xsize+1;x++){
+            if(gameData.xy(x,y)===number){
+                edges.push({'x':x,'y':y})
+            }
+        }
+    }
+    return edges
+}
+GameData.prototype.getAllLegalEdges=function(){
+    var gameData=this
+    return gameData
+        .getAllEdgesByType(gameData.EDGE_NOW)
+        .concat(gameData.getAllEdgesByType(gameData.EDGE_NOT))
+        .concat(gameData.getAllEdgesByType(gameData.EDGE_WILL))
+}
+GameData.prototype.getAllEdges=function(number){
+    if(number==null)return this.getAllLegalEdges()
+    return this.getAllEdgesByType(number)
+}
+GameData.prototype.getAdjacentCellsFromEdge=function(edge){
+    var cells=[]
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx=edge.x+d.x, yy=edge.y+d.y
+        var value=this.xy(xx,yy)
+        if(
+            value===this.SCORE_0 ||
+            value===this.SCORE_1 ||
+            value===this.SCORE_2 ||
+            value===this.SCORE_3 ||
+            value===this.SCORE_4
+        ){
+            cells.push({'x':xx,'y':yy})
+        }
+    }
+    return cells
+}
+GameData.prototype.getEdgeRegionIndices=function(edge){
+    var cells=this.getAdjacentCellsFromEdge(edge)
+    var indices=[]
+    var seen={}
+    for(var ii=0,cell;cell=cells[ii];ii++){
+        var index=this.areaxy(cell.x,cell.y)
+        if(index==='out range' || !index || seen[index] || !this.connectedRegion[index])continue
+        seen[index]=true
+        indices.push(index)
+    }
+    return indices
+}
+GameData.prototype.getEdgeGeometryKey=function(edge){
+    var gameData=this
+    var cells=gameData.getAdjacentCellsFromEdge(edge)
+    var minDist=999
+    var boundaryCount=0
+    var scoreTypes=[]
+    for(var ii=0,cell;cell=cells[ii];ii++){
+        var cx=(cell.x-1)>>1
+        var cy=(cell.y-1)>>1
+        var dist=Math.min(cx,cy,gameData.xsize-1-cx,gameData.ysize-1-cy)
+        if(dist<minDist)minDist=dist
+        if(gameData.regionContainsBoundary({'block':[cell]})){
+            boundaryCount++
+        }
+        scoreTypes.push(gameData.xy(cell.x,cell.y))
+    }
+    if(minDist===999)minDist=-1
+    if(minDist>2)minDist=2
+    scoreTypes.sort()
+    return [
+        edge.x%2===0?'v':'h',
+        cells.length,
+        boundaryCount,
+        minDist,
+        scoreTypes.join(','),
+    ].join('|')
+}
+GameData.prototype.getRegions=function(){
+    if(this.__regions)return this.__regions
+    var gameData=this
+    var regions=[]
+    for(var ii in gameData.connectedRegion){
+        var region = gameData.connectedRegion[ii]
+        if(region)regions.push(region)
+    }
+    this.__regions=regions
+    return regions
+}
+GameData.prototype.getScoreRegions=function(){
+    if(this.__scoreRegions)return this.__scoreRegions
+    var gameData=this
+    var regions=[]
+    if(!gameData.edgeCount[gameData.EDGE_NOW]){
+        this.__scoreRegions=regions
+        return regions
+    }
+    var allRegions=gameData.getRegions()
+    for(var ii=0,region;region=allRegions[ii];ii++){
+        for(var jj=0,pt;pt=region.block[jj];jj++){
+            if(gameData.xy(pt.x,pt.y)!==gameData.SCORE_3)continue
+            regions.push(region)
+            break
+        }
+    }
+    this.__scoreRegions=regions
+    return regions
+}
+GameData.prototype.isClosedRegion=function(region){
+    if(!region)return false
+    for(var ii=0,pt;pt=region.block[ii];ii++){
+        if(this.xy(pt.x,pt.y)===this.SCORE_3)return false
+    }
+    return true
+}
+GameData.prototype.getClosedRegions=function(){
+    if(this.__closedRegions)return this.__closedRegions
+    var gameData=this
+    this.__closedRegions=gameData.getRegions().filter(function(region){
+        return gameData.isClosedRegion(region)
+    })
+    return this.__closedRegions
+}
+GameData.prototype.getSmallRegions=function(){
+    if(this.__smallRegions)return this.__smallRegions
+    this.__smallRegions=this.getClosedRegions().filter(function(region){
+        return region.block.length<=2
+    })
+    return this.__smallRegions
+}
+GameData.prototype.getLargeRegions=function(){
+    if(this.__largeRegions)return this.__largeRegions
+    this.__largeRegions=this.getClosedRegions().filter(function(region){
+        return region.block.length>=3
+    })
+    return this.__largeRegions
+}
+GameData.prototype.getRingRegions=function(){
+    if(this.__ringRegions)return this.__ringRegions
+    this.__ringRegions=this.getRegions().filter(function(region){
+        return region.isRing
+    })
+    return this.__ringRegions
+}
+GameData.prototype.regionContainsBoundary=function(region){
+    var gameData=this
+    for(var ii=0,pt;pt=region.block[ii];ii++){
+        if(
+            gameData.xy(pt.x-2,pt.y)==='out range' ||
+            gameData.xy(pt.x+2,pt.y)==='out range' ||
+            gameData.xy(pt.x,pt.y-2)==='out range' ||
+            gameData.xy(pt.x,pt.y+2)==='out range'
+        ){
+            return true
+        }
+    }
+    return false
+}
+GameData.prototype.countSafeEdges=function(){
+    return this.edgeCount[this.EDGE_NOT]||0
+}
+GameData.prototype.isEndgamePhase=function(){
+    return this.countSafeEdges()===0
+}
+GameData.prototype.getRegionStats=function(){
+    if(this.__regionStats)return this.__regionStats
+    var gameData=this
+    var regions=gameData.getRegions()
+    var closedRegions=gameData.getClosedRegions()
+    var scoreSet={}
+    var scoreRegions=gameData.getScoreRegions()
+    for(var ii=0,scoreRegion;scoreRegion=scoreRegions[ii];ii++){
+        scoreSet[scoreRegion.index]=true
+    }
+    var stats={
+        regionNum:regions.length,
+        closedNum:closedRegions.length,
+        scoreRegionNum:0,
+        scoreCellNum:0,
+        smallClosedNum:0,
+        largeClosedNum:0,
+        ringNum:0,
+        largeRingNum:0,
+        largeNonRingNum:0,
+        boundaryLargeClosedNum:0,
+        innerLargeClosedNum:0,
+        maxClosedSize:0,
+        maxRegionSize:0,
+    }
+    for(var rr=0,region;region=regions[rr];rr++){
+        var size=region.block.length
+        if(size>stats.maxRegionSize)stats.maxRegionSize=size
+        if(scoreSet[region.index]){
+            stats.scoreRegionNum++
+            stats.scoreCellNum+=size
+        }
+        if(region.isRing){
+            stats.ringNum++
+        }
+    }
+    for(var jj=0,closed;closed=closedRegions[jj];jj++){
+        var closedSize=closed.block.length
+        if(closedSize>stats.maxClosedSize)stats.maxClosedSize=closedSize
+        if(closedSize<=2){
+            stats.smallClosedNum++
+            continue
+        }
+        stats.largeClosedNum++
+        if(closed.isRing){
+            stats.largeRingNum++
+        } else {
+            stats.largeNonRingNum++
+        }
+        if(gameData.regionContainsBoundary(closed)){
+            stats.boundaryLargeClosedNum++
+        } else {
+            stats.innerLargeClosedNum++
+        }
+    }
+    this.__regionStats=stats
+    return stats
+}
+GameData.prototype.getEvalFeatures=function(){
+    if(this.__evalFeatures)return this.__evalFeatures
+    var gameData=this
+    var stats=gameData.getRegionStats()
+    var safeEdgeCount=gameData.countSafeEdges()
+    var scoreRegions=gameData.getScoreRegions()
+    var closedRegions=gameData.getClosedRegions()
+    var features={
+        phase:'layout',
+        safeEdgeCount:safeEdgeCount,
+        scoreEdgeCount:gameData.edgeCount[gameData.EDGE_NOW]||0,
+        sacrificeEdgeCount:gameData.edgeCount[gameData.EDGE_WILL]||0,
+        irrelevantEdgeCount:0,
+        controlSwingCount:0,
+        controlZeroParitySignal:0,
+        smallParitySignal:(stats.smallClosedNum%2===0)?1:-1,
+        safeSmallParitySignal:((safeEdgeCount+stats.smallClosedNum)%2===0)?1:-1,
+        largeNonRingParitySignal:(stats.largeNonRingNum%2===0)?1:-1,
+        totalSmallCells:0,
+        totalLargeCells:0,
+        largeChainNum:stats.largeNonRingNum,
+        largeRingNum:stats.largeRingNum,
+        largeChainCellNum:0,
+        largeRingCellNum:0,
+        boundaryChainNum:0,
+        innerChainNum:0,
+        chain3Num:0,
+        chain4PlusNum:0,
+        ring4Num:0,
+        ring6PlusNum:0,
+        activeScoreRegionNum:scoreRegions.length,
+        activeScoreCellNum:0,
+        activeSmallScoreRegionNum:0,
+        activeLargeScoreRegionNum:0,
+        activeLargeScoreCellNum:0,
+        activeRingScoreRegionNum:0,
+        activeBoundaryScoreRegionNum:0,
+        activeMaxScoreRegionSize:0,
+        structureOpportunityZoneNum:0,
+        splitOpportunityZoneNum:0,
+        criticalSplitZoneNum:0,
+        deferredCriticalSplitZoneNum:0,
+        blockableDeferredCriticalSplitZoneNum:0,
+        currentOwnedOpportunityZoneNum:0,
+        opponentOwnedOpportunityZoneNum:0,
+        lastOpportunityOwnerSign:0,
+        lastOpportunityBeneficiarySign:0,
+        lastCriticalSplitZone:0,
+        structureOpportunitySignature:'none',
+    }
+
+    for(var ii=0,region;region=closedRegions[ii];ii++){
+        var size=region.block.length
+        if(size<=2){
+            features.totalSmallCells+=size
+            continue
+        }
+        features.totalLargeCells+=size
+        if(region.isRing){
+            features.largeRingCellNum+=size
+            if(size===4){
+                features.ring4Num++
+            } else {
+                features.ring6PlusNum++
+            }
+            continue
+        }
+        features.largeChainCellNum+=size
+        if(size===3){
+            features.chain3Num++
+        } else {
+            features.chain4PlusNum++
+        }
+        if(gameData.regionContainsBoundary(region)){
+            features.boundaryChainNum++
+        } else {
+            features.innerChainNum++
+        }
+    }
+
+    for(var jj=0,scoreRegion;scoreRegion=scoreRegions[jj];jj++){
+        var scoreSize=scoreRegion.block.length
+        features.activeScoreCellNum+=scoreSize
+        if(scoreSize>features.activeMaxScoreRegionSize){
+            features.activeMaxScoreRegionSize=scoreSize
+        }
+        if(scoreRegion.isRing){
+            features.activeRingScoreRegionNum++
+        }
+        if(gameData.regionContainsBoundary(scoreRegion)){
+            features.activeBoundaryScoreRegionNum++
+        }
+        if(scoreSize<=2){
+            features.activeSmallScoreRegionNum++
+        } else {
+            features.activeLargeScoreRegionNum++
+            features.activeLargeScoreCellNum+=scoreSize
+        }
+    }
+
+    if(
+        safeEdgeCount &&
+        (
+            gameData.__safeEdgeAnalyses ||
+            safeEdgeCount<=12
+        )
+    ){
+        var analyses=gameData.getSafeEdgeAnalyses()
+        features.irrelevantEdgeCount=gameData.getIrrelevantEdges(analyses).length
+        features.controlSwingCount=gameData.getControlSwingStructures(analyses).length
+        if(safeEdgeCount<=12){
+            var opportunity=gameData.getStructureOpportunitySummary(analyses,false)
+            features.structureOpportunityZoneNum=opportunity.zoneNum
+            features.splitOpportunityZoneNum=opportunity.splitZoneNum
+            features.criticalSplitZoneNum=opportunity.criticalSplitZoneNum
+            features.deferredCriticalSplitZoneNum=opportunity.deferredCriticalSplitZoneNum
+            features.blockableDeferredCriticalSplitZoneNum=
+                opportunity.blockableDeferredCriticalSplitZoneNum
+            features.currentOwnedOpportunityZoneNum=opportunity.currentOwnedOpportunityZoneNum
+            features.opponentOwnedOpportunityZoneNum=opportunity.opponentOwnedOpportunityZoneNum
+            features.lastOpportunityOwnerSign=opportunity.lastOpportunityOwnerSign
+            features.lastOpportunityBeneficiarySign=opportunity.lastOpportunityBeneficiarySign
+            features.lastCriticalSplitZone=opportunity.criticalSplitZoneNum===1?1:0
+            features.structureOpportunitySignature=opportunity.signature
+        }
+    }
+    features.controlZeroParitySignal=
+        features.controlSwingCount===0?features.safeSmallParitySignal:0
+
+    if(safeEdgeCount===0){
+        features.phase='endgame'
+    } else if(
+        features.scoreEdgeCount>0 ||
+        stats.largeClosedNum>0 ||
+        features.activeLargeScoreRegionNum>0 ||
+        safeEdgeCount<=8
+    ){
+        features.phase='transition'
+    }
+
+    this.__evalFeatures=features
+    return features
+}
+GameData.prototype.getStructureFingerprint=function(stats){
+    if(!stats && this.__structureFingerprint)return this.__structureFingerprint
+    stats=stats||this.getRegionStats()
+    var key=[
+        stats.regionNum,
+        stats.closedNum,
+        stats.scoreRegionNum,
+        stats.scoreCellNum,
+        stats.smallClosedNum,
+        stats.largeClosedNum,
+        stats.largeRingNum,
+        stats.largeNonRingNum,
+        stats.boundaryLargeClosedNum,
+        stats.innerLargeClosedNum,
+        stats.maxClosedSize,
+        stats.maxRegionSize,
+    ].join('|')
+    if(!stats || stats===this.__regionStats)this.__structureFingerprint=key
+    return key
+}
+GameData.prototype.getControlFingerprint=function(stats){
+    var rawOnly=arguments[1]===true
+    if(!stats && !rawOnly && this.__controlFingerprint)return this.__controlFingerprint
+    stats=stats||this.getRegionStats()
+    var key=[
+        stats.smallClosedNum,
+        stats.largeClosedNum,
+        stats.largeRingNum,
+        stats.largeNonRingNum,
+        stats.boundaryLargeClosedNum,
+        stats.innerLargeClosedNum,
+        stats.maxClosedSize,
+        stats.maxRegionSize,
+        this.isEndgamePhase()?1:0,
+    ].join('|')
+    if(!rawOnly && this.countSafeEdges()<=12){
+        key+='|'+this.getStructureOpportunityFingerprint()
+    }
+    if(!rawOnly && (!stats || stats===this.__regionStats))this.__controlFingerprint=key
+    return key
+}
+GameData.prototype.getOpportunityCriticalKey=function(stats){
+    stats=stats||this.getRegionStats()
+    return [
+        stats.smallClosedNum,
+        stats.largeClosedNum,
+        stats.largeRingNum,
+        stats.largeNonRingNum,
+        stats.boundaryLargeClosedNum,
+        stats.innerLargeClosedNum,
+        stats.maxClosedSize,
+    ].join('|')
+}
+GameData.prototype.getOpportunityNoRingKey=function(stats){
+    stats=stats||this.getRegionStats()
+    return [
+        stats.largeNonRingNum,
+        stats.largeRingNum,
+    ].join('|')
+}
+GameData.prototype.applyEdgeClone=function(gameData, edge){
+    if(!gameData || !edge)return null
+    if(
+        [gameData.EDGE_NOW,gameData.EDGE_NOT,gameData.EDGE_WILL]
+        .indexOf(gameData.xy(edge.x,edge.y))===-1
+    )return null
+    var next=gameData.clone()
+    next.putxy(edge.x,edge.y)
+    return next
+}
+GameData.prototype.isNearbyOpportunityEdge=function(edge, zone){
+    if(!edge || !zone || !zone.length)return false
+    for(var ii=0,item;item=zone[ii];ii++){
+        var dx=Math.abs(edge.x-item.edge.x)
+        var dy=Math.abs(edge.y-item.edge.y)
+        if(dx+dy<=2)return true
+    }
+    return false
+}
+GameData.prototype.getEdgePointKeys=function(edge){
+    if(!edge)return []
+    if(edge.x%2===0){
+        return [
+            [edge.x,edge.y-1].join(','),
+            [edge.x,edge.y+1].join(','),
+        ]
+    }
+    return [
+        [edge.x-1,edge.y].join(','),
+        [edge.x+1,edge.y].join(','),
+    ]
+}
+GameData.prototype.getDelayedOpportunityInfo=function(zone, baseCriticalKey, baseNoRingKey){
+    if(!zone || zone.length!==2)return null
+    var delayedPaths=[]
+    for(var ii=0;ii<zone.length;ii++){
+        var first=zone[ii]
+        var second=zone[1-ii]
+        if(this.getOpportunityCriticalKey(first.afterStats)!==baseCriticalKey)continue;
+        var secondState=this.applyEdgeClone(first.state,second.edge)
+        if(!secondState)continue;
+        var secondStats=secondState.getRegionStats()
+        var secondNoRingKey=this.getOpportunityNoRingKey(secondStats)
+        if(secondNoRingKey===baseNoRingKey)continue;
+        delayedPaths.push({
+            firstEdge:first.edge,
+            firstState:first.state,
+            secondEdge:second.edge,
+        })
+    }
+    if(!delayedPaths.length){
+        return {
+            exists:false,
+            blockable:false,
+            pathCount:0,
+        }
+    }
+    var allBlockable=true
+    for(var jj=0,path;path=delayedPaths[jj];jj++){
+        var blockerFound=false
+        var blockerEdges=path.firstState.getAllEdges(path.firstState.EDGE_WILL)
+        for(var kk=0,blocker;blocker=blockerEdges[kk];kk++){
+            if(!this.isNearbyOpportunityEdge(blocker,zone))continue;
+            var blockedState=this.applyEdgeClone(path.firstState,blocker)
+            if(!blockedState)continue;
+            var followState=this.applyEdgeClone(blockedState,path.secondEdge)
+            if(!followState){
+                blockerFound=true
+                break
+            }
+            if(this.getOpportunityNoRingKey(followState.getRegionStats())===baseNoRingKey){
+                blockerFound=true
+                break
+            }
+        }
+        if(!blockerFound){
+            allBlockable=false
+            break
+        }
+    }
+    return {
+        exists:true,
+        blockable:allBlockable,
+        pathCount:delayedPaths.length,
+        paths:delayedPaths,
+    }
+}
+GameData.prototype.estimateOpportunityOutcomeValue=function(state, rootPlayerId){
+    if(!state)return 0
+    var stats=state.getRegionStats()
+    var currentSign=state.playerId===rootPlayerId?1:-1
+    var value=
+        (state.player[rootPlayerId].score-state.player[1-rootPlayerId].score)*10000
+    value+=currentSign*120
+    value+=state.edgeCount[state.EDGE_NOW]*currentSign*50
+    value+=state.edgeCount[state.EDGE_NOT]*2
+    value-=state.edgeCount[state.EDGE_WILL]*6
+    value+=stats.scoreCellNum*currentSign*32
+    value-=stats.smallClosedNum*80
+    value+=stats.largeNonRingNum*currentSign*220
+    value+=stats.largeRingNum*currentSign*150
+    value+=stats.boundaryLargeClosedNum*currentSign*70
+    value+=stats.innerLargeClosedNum*currentSign*110
+    value+=stats.maxClosedSize*currentSign*18
+    return value
+}
+GameData.prototype.getOpportunityOutcomeValue=function(state, rootPlayerId){
+    if(!state)return null
+    GameData.__opportunityOutcomeCache=GameData.__opportunityOutcomeCache||{}
+    GameData.__opportunityExactCacheByPlayer=
+        GameData.__opportunityExactCacheByPlayer||{}
+    var cacheKey=rootPlayerId+'|'+state.getBoardKey()
+    if(GameData.__opportunityOutcomeCache[cacheKey]!=null){
+        return GameData.__opportunityOutcomeCache[cacheKey]
+    }
+    var value=null
+    if(typeof TreeSearchAI!=='undefined'){
+        var safeEdgeCount=state.countSafeEdges()
+        var ai=new TreeSearchAI()
+        ai.playerId=rootPlayerId
+        ai.exactEndgameCache=
+            GameData.__opportunityExactCacheByPlayer[rootPlayerId]||
+            (GameData.__opportunityExactCacheByPlayer[rootPlayerId]={})
+        if(!state.edgeCount[state.EDGE_NOT]){
+            value=ai.solveExactEndgame(state)
+        } else if(safeEdgeCount<=2){
+            value=ai.solveLateEndgameWithLimit(state,safeEdgeCount)
+        }
+    }
+    if(value==null){
+        value=this.estimateOpportunityOutcomeValue(state, rootPlayerId)
+    }
+    GameData.__opportunityOutcomeCache[cacheKey]=value
+    return value
+}
+GameData.prototype.getDelayedOpportunityBeneficiaryValue=function(
+    record,
+    rootPlayerId,
+    baseNoRingKey
+){
+    if(
+        !record ||
+        !record.delayedInfo ||
+        !record.delayedInfo.paths ||
+        !record.delayedInfo.paths.length
+    )return 0
+    var grouped={}
+    for(var ii=0,path;path=record.delayedInfo.paths[ii];ii++){
+        var pathKey=[path.firstEdge.x,path.firstEdge.y].join(',')
+        if(!grouped[pathKey]){
+            grouped[pathKey]={
+                values:[],
+            }
+        }
+        var group=grouped[pathKey]
+        var secondState=this.applyEdgeClone(path.firstState,path.secondEdge)
+        if(secondState){
+            group.values.push(
+                this.getOpportunityOutcomeValue(secondState,rootPlayerId)
+            )
+        }
+        if(record.kind!=='delayed-opponent')continue;
+        var blockerSeen={}
+        var blockerEdges=path.firstState.getAllEdges(path.firstState.EDGE_WILL)
+        for(var jj=0,blocker;blocker=blockerEdges[jj];jj++){
+            if(!this.isNearbyOpportunityEdge(blocker,record.zone))continue;
+            var blockedState=this.applyEdgeClone(path.firstState,blocker)
+            if(!blockedState)continue;
+            var followState=this.applyEdgeClone(blockedState,path.secondEdge)
+            if(
+                followState &&
+                this.getOpportunityNoRingKey(followState.getRegionStats())!==baseNoRingKey
+            )continue;
+            var blockedKey=blockedState.getBoardKey()
+            if(blockerSeen[blockedKey])continue;
+            blockerSeen[blockedKey]=true
+            group.values.push(
+                this.getOpportunityOutcomeValue(blockedState,rootPlayerId)
+            )
+        }
+    }
+    var best=null
+    for(var key in grouped){
+        var values=grouped[key].values
+        if(!values.length)continue;
+        var choiceValue=values[0]
+        for(var kk=1;kk<values.length;kk++){
+            if(record.kind==='delayed-opponent'){
+                if(values[kk]<choiceValue)choiceValue=values[kk]
+            } else {
+                if(values[kk]>choiceValue)choiceValue=values[kk]
+            }
+        }
+        if(best==null || choiceValue>best){
+            best=choiceValue
+        }
+    }
+    return best==null?0:best
+}
+GameData.prototype.getLastOpportunityBeneficiarySign=function(record){
+    if(!record)return 0
+    if(this.countSafeEdges()>2)return 0
+    var rootPlayerId=this.playerId
+    var value=0
+    if(record.kind==='immediate-current'){
+        value=null
+        for(var ii=0,item;item=record.zone[ii];ii++){
+            var itemValue=this.getOpportunityOutcomeValue(item.state,rootPlayerId)
+            if(value==null || itemValue>value)value=itemValue
+        }
+    } else if(
+        record.kind==='delayed-current' ||
+        record.kind==='delayed-opponent'
+    ){
+        value=this.getDelayedOpportunityBeneficiaryValue(
+            record,
+            rootPlayerId,
+            this.getOpportunityNoRingKey()
+        )
+    }
+    if(value>0)return 1
+    if(value<0)return -1
+    return 0
+}
+GameData.prototype.getStructureOpportunitySummary=function(analyses, includeBeneficiary){
+    if(includeBeneficiary==null)includeBeneficiary=!analyses
+    if(
+        !analyses &&
+        (
+            includeBeneficiary?
+                this.__structureOpportunitySummaryWithBeneficiary:
+                this.__structureOpportunitySummary
+        )
+    )return includeBeneficiary?
+        this.__structureOpportunitySummaryWithBeneficiary:
+        this.__structureOpportunitySummary
+    analyses=analyses||this.getSafeEdgeAnalyses()
+    var summary={
+        zoneNum:0,
+        splitZoneNum:0,
+        criticalSplitZoneNum:0,
+        deferredCriticalSplitZoneNum:0,
+        blockableDeferredCriticalSplitZoneNum:0,
+        currentOwnedOpportunityZoneNum:0,
+        opponentOwnedOpportunityZoneNum:0,
+        lastOpportunityOwnerSign:0,
+        lastOpportunityBeneficiarySign:0,
+        signature:'none',
+    }
+    if(!analyses.length){
+        if(!arguments.length || analyses===this.__safeEdgeAnalyses){
+            if(includeBeneficiary){
+                this.__structureOpportunitySummaryWithBeneficiary=summary
+            } else {
+                this.__structureOpportunitySummary=summary
+            }
+        }
+        return summary
+    }
+
+    var pointKeys=[]
+    for(var ii=0,item;item=analyses[ii];ii++){
+        pointKeys[ii]=this.getEdgePointKeys(item.edge)
+    }
+
+    var visited={}
+    var zoneKeys=[]
+    var ownedZoneRecords=[]
+    var baseCriticalKey=this.getOpportunityCriticalKey(this.getRegionStats())
+    var baseNoRingKey=this.getOpportunityNoRingKey(this.getRegionStats())
+    for(var start=0;start<analyses.length;start++){
+        if(visited[start])continue;
+        var queue=[start]
+        var zone=[]
+        visited[start]=true
+        while(queue.length){
+            var idx=queue.shift()
+            zone.push(analyses[idx])
+            var points=pointKeys[idx]
+            for(var jj=0;jj<analyses.length;jj++){
+                if(visited[jj])continue;
+                var otherPoints=pointKeys[jj]
+                if(
+                    points[0]===otherPoints[0] ||
+                    points[0]===otherPoints[1] ||
+                    points[1]===otherPoints[0] ||
+                    points[1]===otherPoints[1]
+                ){
+                    visited[jj]=true
+                    queue.push(jj)
+                }
+            }
+        }
+
+        summary.zoneNum++
+        var fineOutcomes={}
+        var criticalOutcomes={}
+        var geometryOutcomes={}
+        for(var kk=0,zoneItem;zoneItem=zone[kk];kk++){
+            var fineKey=[
+                zoneItem.structureKey,
+                this.getOpportunityCriticalKey(zoneItem.afterStats),
+                zoneItem.state.countSafeEdges(),
+                zoneItem.state.edgeCount[zoneItem.state.EDGE_WILL],
+            ].join('|')
+            var criticalKey=this.getOpportunityCriticalKey(zoneItem.afterStats)
+            fineOutcomes[fineKey]=true
+            criticalOutcomes[criticalKey]=true
+            geometryOutcomes[zoneItem.geometryKey+'>'+criticalKey]=true
+        }
+
+        var fineList=Object.keys(fineOutcomes).sort()
+        var criticalList=Object.keys(criticalOutcomes).sort()
+        if(fineList.length>1)summary.splitZoneNum++
+        if(criticalList.length>1){
+            summary.criticalSplitZoneNum++
+            summary.currentOwnedOpportunityZoneNum++
+            ownedZoneRecords.push({
+                kind:'immediate-current',
+                zone:zone,
+            })
+            zoneKeys.push([
+                'owned-current-immediate',
+                zone.length,
+                fineList.length,
+                criticalList.length,
+                Object.keys(geometryOutcomes).sort().join('&'),
+            ].join(':'))
+            continue
+        }
+        var delayedInfo=this.getDelayedOpportunityInfo(zone,baseCriticalKey,baseNoRingKey)
+        if(delayedInfo && delayedInfo.exists){
+            summary.deferredCriticalSplitZoneNum++
+            if(delayedInfo.blockable){
+                summary.blockableDeferredCriticalSplitZoneNum++
+                summary.opponentOwnedOpportunityZoneNum++
+                ownedZoneRecords.push({
+                    kind:'delayed-opponent',
+                    zone:zone,
+                    delayedInfo:delayedInfo,
+                })
+            } else {
+                summary.currentOwnedOpportunityZoneNum++
+                ownedZoneRecords.push({
+                    kind:'delayed-current',
+                    zone:zone,
+                    delayedInfo:delayedInfo,
+                })
+            }
+            zoneKeys.push([
+                delayedInfo.blockable?'owned-opponent-delayed':'owned-current-delayed',
+                zone.length,
+                delayedInfo.pathCount,
+                zone.map(function(item){
+                    return [item.edge.x,item.edge.y].join(',')
+                }).sort().join('&'),
+            ].join(':'))
+        }
+    }
+
+    var totalOwnedOpportunityZoneNum=
+        summary.currentOwnedOpportunityZoneNum+
+        summary.opponentOwnedOpportunityZoneNum
+    if(totalOwnedOpportunityZoneNum===1){
+        if(summary.currentOwnedOpportunityZoneNum===1){
+            summary.lastOpportunityOwnerSign=1
+        } else if(summary.opponentOwnedOpportunityZoneNum===1){
+            summary.lastOpportunityOwnerSign=-1
+        }
+        if(includeBeneficiary && ownedZoneRecords.length===1){
+            summary.lastOpportunityBeneficiarySign=
+                this.getLastOpportunityBeneficiarySign(ownedZoneRecords[0])
+        }
+    }
+    if(zoneKeys.length){
+        summary.signature=zoneKeys.sort().join('/')
+        if(includeBeneficiary && summary.lastOpportunityBeneficiarySign){
+            summary.signature+='|beneficiary:'+
+                (summary.lastOpportunityBeneficiarySign>0?'current':'opponent')
+        }
+    }
+    if(!arguments.length || analyses===this.__safeEdgeAnalyses){
+        if(includeBeneficiary){
+            this.__structureOpportunitySummaryWithBeneficiary=summary
+        } else {
+            this.__structureOpportunitySummary=summary
+        }
+    }
+    return summary
+}
+GameData.prototype.getStructureOpportunityFingerprint=function(analyses){
+    return this.getStructureOpportunitySummary(analyses,false).signature
+}
+GameData.prototype.getSafeEdgeAnalyses=function(){
+    if(this.__safeEdgeAnalyses)return this.__safeEdgeAnalyses
+    var gameData=this
+    var beforeStats=gameData.getRegionStats()
+    var beforeStructureKey=gameData.getStructureFingerprint(beforeStats)
+    var beforeControlKey=gameData.getControlFingerprint(beforeStats,true)
+    var beforeEndgame=gameData.isEndgamePhase()
+    var analyses=[]
+    var edges=gameData.getAllEdges(gameData.EDGE_NOT)
+    for(var ii=0,edge;edge=edges[ii];ii++){
+        var next=gameData.clone()
+        next.putxy(edge.x,edge.y)
+        var afterStats=next.getRegionStats()
+        var structureKey=next.getStructureFingerprint(afterStats)
+        var controlKey=next.getControlFingerprint(afterStats,true)
+        var endgameNow=next.isEndgamePhase()
+        var geometryKey=gameData.getEdgeGeometryKey(edge)
+        var geometryParts=geometryKey.split('|')
+        var minDist=~~geometryParts[3]
+        var boundaryCount=~~geometryParts[2]
+        var adjacentCellNum=~~geometryParts[1]
+        var geometryScore=0
+        geometryScore+=adjacentCellNum*20
+        geometryScore+=minDist*12
+        geometryScore-=boundaryCount*10
+        var swingScore=0
+        swingScore+=Math.abs(afterStats.largeNonRingNum-beforeStats.largeNonRingNum)*40
+        swingScore+=Math.abs(afterStats.largeRingNum-beforeStats.largeRingNum)*28
+        swingScore+=Math.abs(afterStats.innerLargeClosedNum-beforeStats.innerLargeClosedNum)*18
+        swingScore+=Math.abs(afterStats.boundaryLargeClosedNum-beforeStats.boundaryLargeClosedNum)*12
+        swingScore+=Math.abs(afterStats.smallClosedNum-beforeStats.smallClosedNum)*8
+        swingScore+=Math.abs(afterStats.closedNum-beforeStats.closedNum)*6
+        swingScore+=Math.abs(afterStats.maxClosedSize-beforeStats.maxClosedSize)*2
+        analyses.push({
+            edge:{'x':edge.x,'y':edge.y},
+            edgeKey:[edge.x,edge.y].join(','),
+            geometryKey:geometryKey,
+            state:next,
+            afterStats:afterStats,
+            structureKey:structureKey,
+            controlKey:controlKey,
+            geometryScore:geometryScore,
+            parityKey:[
+                (next.countSafeEdges()+afterStats.smallClosedNum)%2===0?1:0,
+                geometryKey,
+                afterStats.largeNonRingNum,
+                afterStats.largeRingNum,
+            ].join('|'),
+            swingScore:swingScore,
+        })
+    }
+    for(var aa=0,analysis;analysis=analyses[aa];aa++){
+        if(analysis.structureKey!==beforeStructureKey)analysis.swingScore+=10
+        if(analysis.controlKey!==beforeControlKey)analysis.swingScore+=14
+        if(analysis.state.isEndgamePhase()!==beforeEndgame)analysis.swingScore+=20
+        analysis.opportunityKey='na'
+        analysis.isIrrelevant=analysis.structureKey===beforeStructureKey
+        analysis.isControlSwing=
+            analysis.controlKey!==beforeControlKey ||
+            analysis.state.isEndgamePhase()!==beforeEndgame
+    }
+    analyses.sort(function(a,b){
+        if(a.isControlSwing!==b.isControlSwing)return a.isControlSwing?-1:1
+        if(a.isIrrelevant!==b.isIrrelevant)return a.isIrrelevant?1:-1
+        return b.swingScore-a.swingScore
+    })
+    this.__safeEdgeAnalyses=analyses
+    return analyses
+}
+GameData.prototype.getSacrificeEdgeAnalyses=function(){
+    if(this.__sacrificeEdgeAnalyses)return this.__sacrificeEdgeAnalyses
+    var gameData=this
+    var analyses=[]
+    var edges=gameData.getAllEdges(gameData.EDGE_WILL)
+    for(var ii=0,edge;edge=edges[ii];ii++){
+        var next=gameData.clone()
+        next.putxy(edge.x,edge.y)
+        var geometryKey=gameData.getEdgeGeometryKey(edge)
+        var geometryParts=geometryKey.split('|')
+        var adjacentCellNum=~~geometryParts[1]
+        var boundaryCount=~~geometryParts[2]
+        var minDist=~~geometryParts[3]
+        var geometryScore=0
+        geometryScore+=adjacentCellNum*20
+        geometryScore+=minDist*12
+        geometryScore-=boundaryCount*10
+        var regionIndices=gameData.getEdgeRegionIndices(edge)
+        var primaryRegion=null
+        for(var jj=0,index;index=regionIndices[jj];jj++){
+            var region=gameData.connectedRegion[index]
+            if(!region)continue
+            if(
+                !primaryRegion ||
+                region.block.length<primaryRegion.block.length ||
+                (region.block.length===primaryRegion.block.length && region.isRing && !primaryRegion.isRing) ||
+                (region.block.length===primaryRegion.block.length && region.isRing===primaryRegion.isRing && region.index<primaryRegion.index)
+            ){
+                primaryRegion=region
+            }
+        }
+        var regionSize=primaryRegion?primaryRegion.block.length:999
+        var hasBoundary=primaryRegion?gameData.regionContainsBoundary(primaryRegion):false
+        var isRing=primaryRegion?primaryRegion.isRing:false
+        var afterStats=next.getRegionStats()
+        var openScore=0
+        openScore-=regionSize*120
+        if(regionSize<=2)openScore+=520
+        if(!isRing && regionSize===2)openScore+=180
+        if(isRing && regionSize===4)openScore+=220
+        if(isRing)openScore+=40
+        if(hasBoundary)openScore+=20
+        if(!isRing && regionSize===2)openScore+=geometryScore*5
+        openScore-=afterStats.largeNonRingNum*40
+        openScore-=afterStats.largeRingNum*20
+        analyses.push({
+            edge:{'x':edge.x,'y':edge.y},
+            edgeKey:[edge.x,edge.y].join(','),
+            state:next,
+            afterStats:afterStats,
+            regionIndex:primaryRegion?primaryRegion.index:null,
+            regionSize:regionSize,
+            isRing:isRing,
+            hasBoundary:hasBoundary,
+            geometryKey:geometryKey,
+            geometryScore:geometryScore,
+            categoryKey:[
+                regionSize<=2?'small':'large',
+                isRing?'ring':'chain',
+                hasBoundary?'boundary':'inner',
+                regionSize,
+            ].join('|'),
+            orderBonus:openScore,
+        })
+    }
+    analyses.sort(function(a,b){
+        if(a.regionSize!==b.regionSize)return a.regionSize-b.regionSize
+        if(a.isRing!==b.isRing)return a.isRing?-1:1
+        if(a.hasBoundary!==b.hasBoundary)return a.hasBoundary?-1:1
+        return b.orderBonus-a.orderBonus
+    })
+    this.__sacrificeEdgeAnalyses=analyses
+    return analyses
+}
+GameData.prototype.getIrrelevantEdges=function(analyses){
+    if(!analyses && this.__irrelevantEdges)return this.__irrelevantEdges
+    analyses=analyses||this.getSafeEdgeAnalyses()
+    var edges=[]
+    for(var ii=0,item;item=analyses[ii];ii++){
+        if(item.isIrrelevant){
+            edges.push({'x':item.edge.x,'y':item.edge.y})
+        }
+    }
+    if(!analyses || analyses===this.__safeEdgeAnalyses)this.__irrelevantEdges=edges
+    return edges
+}
+GameData.prototype.getControlSwingStructures=function(analyses){
+    if(!analyses && this.__controlSwingStructures)return this.__controlSwingStructures
+    analyses=analyses||this.getSafeEdgeAnalyses()
+    var groups={}
+    for(var ii=0,item;item=analyses[ii];ii++){
+        if(!item.isControlSwing)continue;
+        var key=item.controlKey
+        if(!groups[key]){
+            groups[key]={
+                key:key,
+                analyses:[],
+                edges:[],
+                swingScore:item.swingScore,
+            }
+        }
+        groups[key].analyses.push(item)
+        groups[key].edges.push({'x':item.edge.x,'y':item.edge.y})
+        if(item.swingScore>groups[key].swingScore){
+            groups[key].swingScore=item.swingScore
+        }
+    }
+    var list=[]
+    for(var name in groups){
+        var group=groups[name]
+        group.analyses.sort(function(a,b){
+            return b.swingScore-a.swingScore
+        })
+        group.edge={'x':group.analyses[0].edge.x,'y':group.analyses[0].edge.y}
+        list.push(group)
+    }
+    list.sort(function(a,b){
+        return b.swingScore-a.swingScore
+    })
+    if(!analyses || analyses===this.__safeEdgeAnalyses)this.__controlSwingStructures=list
+    return list
+}
+GameData.prototype.getBoardKey=function(){
+    if(this.__boardKey)return this.__boardKey
+    var gameData=this
+    var rows=[]
+    for(var y=0;y<gameData.map.length;y++){
+        rows.push(gameData.map[y].join(','))
+    }
+    this.__boardKey=[
+        gameData.playerId,
+        gameData.player[0].score,
+        gameData.player[1].score,
+        rows.join(';')
+    ].join('|')
+    return this.__boardKey
+}
+
+////////////////// GamePlayer //////////////////
+GamePlayer=function(){}
+
+GamePlayer.prototype.bind=function(playerId,callback){
+    this.playerId=playerId
+    this.player=this.game.player[playerId]
+    this.player.pointer=this
+    var thisplayer=this
+    this.player.changeTurn=function(callback){return thisplayer.changeTurn(callback)}
+    this.player.continueTurn=function(callback){return thisplayer.continueTurn(callback)}
+    //if(this.game.playerId===playerId && !this.game.lock)this.changeTurn(callback);
+    return this
+}
+GamePlayer.prototype.remove=function(){
+    var game=this.game
+    this.player.changeTurn=function(callback){game.lock=0}
+    this.player.continueTurn=function(callback){}
+    this.player.pointer=null
+    if(game.playerId===this.playerId)game.lock=0;
+}
+GamePlayer.prototype.init=function(game){
+    this.game=game
+    return this
+}
+
+GamePlayer.prototype.changeTurn=function(callback){
+    //this.game.lock=1
+    //计算
+    this.game.lock=0
+    //this.game.putxy(x,y)
+}
+
+GamePlayer.prototype.continueTurn=function(callback){
+    //this.game.lock=1
+    //计算
+    this.game.lock=0
+    //this.game.putxy(x,y)
+}
+
+////////////////// LocalPlayer //////////////////
+LocalPlayer=function(){
+    GamePlayer.call(this)
+    return this
+}
+LocalPlayer.prototype = Object.create(GamePlayer.prototype)
+LocalPlayer.prototype.constructor = LocalPlayer
+
+LocalPlayer.prototype.changeTurn=function(callback){this.game.lock=0}
+LocalPlayer.prototype.continueTurn=function(callback){this.game.lock=0}
+
+////////////////// NetworkPlayer //////////////////
+NetworkPlayer=function(){
+    GamePlayer.call(this)
+    return this
+}
+NetworkPlayer.prototype = Object.create(GamePlayer.prototype)
+NetworkPlayer.prototype.constructor = NetworkPlayer
+
+NetworkPlayer.prototype.changeTurn=function(callback){this.game.lock=1}
+NetworkPlayer.prototype.continueTurn=function(callback){this.game.lock=1}
+
+NetworkPlayer.prototype.init=function(game,gameview){
+    this.game=game
+    this.gameview=gameview
+    return this
+}
+NetworkPlayer.prototype.bind=function(playerId,callback){
+    new GamePlayer().bind.call(this,playerId,callback)
+    this.game.lock=1
+    var thisplayer = this
+    thisplayer.emitPut=function(x,y){
+        if(thisplayer.game.playerId===thisplayer.playerId)return;
+        thisplayer.socket.emit('put', thisplayer.room, [x,y,thisplayer.playerId]);
+    }
+    thisplayer.restart=function(){
+        //重置游戏并交换先后手
+        setTimeout(function(){
+            var newgame = new Game().init(thisplayer.game.xsize,thisplayer.game.ysize)
+            if(thisplayer.gameview){
+                var game=newgame
+                thisplayer.gameview.init(game,'hasInited')
+            }
+            var p1=thisplayer.game.player[1].pointer
+            var p2=thisplayer.game.player[0].pointer
+            p2.init(newgame,thisplayer.gameview).bind(1)
+            p1.init(newgame,thisplayer.gameview).bind(0)
+
+            thisplayer.socket.emit('ready', thisplayer.room)
+        },1000)
+    }
+    this.game.changeEdge.push(thisplayer.emitPut)
+    if(this.gameview){
+        while(this.game.win.length>2)this.game.win.pop();
+    }
+    this.game.win.push(thisplayer.restart)
+    if(!this.room){
+        this.queryRoom()
+        this.initSocket()
+        this.connect()
+    }
+    return this
+}
+NetworkPlayer.prototype.remove=function(){
+    new GamePlayer().remove.call(this)
+    var index = this.game.changeEdge.indexOf(this.emitPut)
+    this.game.changeEdge.splice(index,1)
+    this.emitPut=null
+    var index = this.game.win.indexOf(this.restart)
+    this.game.win.splice(index,1)
+    this.restart=null
+    this.socket.close()
+}
+
+NetworkPlayer.prototype.queryRoom=function(){
+    // getinput -> room, 0 for rand match
+    this.room=0
+}
+NetworkPlayer.prototype.printtip=function(tip){
+    console.log(tip)
+    if(this.gameview&&this.gameview.gametip){
+        this.gameview.printtip(tip)
+    }
+}
+
+NetworkPlayer.prototype.initSocket=function(){
+    var urlstr=':5050/pencil'
+    // http://pencilonline.top/index.html?url=https://h5mota.com:5050/pencil
+    if(this.gameview && this.gameview.urlstr)urlstr=this.gameview.urlstr;
+    var socket = io(urlstr)
+    this.socket=socket
+    var thisplayer = this
+    var printtip = thisplayer.printtip
+    var updateBoard = function(board){
+        thisplayer.game.history=board
+        if(thisplayer.gameview){
+            game=new ReplayController().init(thisplayer.game,thisplayer.gameview).replay(null,0,function(newgame,gameview){
+                newgame.lock=0
+                var player1 = new LocalPlayer().init(newgame,gameview).bind(0)
+                var player2 = new LocalPlayer().init(newgame,gameview).bind(1)
+                newgame.win=[]
+                newgame.firstStep()
+            })
+            game.win=[]
+            game.firstStep()
+        }
+    }
+    var endgame = function(){
+        thisplayer.remove()
+    }
+    var put_down = function(x, y, type){
+        thisplayer.game.lock=0
+        thisplayer.game.putxy(x,y)
+    }
+
+    // start game
+    socket.on('start', function(data, room, board) { // data [xsize,ysize,playerId]
+        if(data[2]==-1){
+            thisplayer.playerId=-1
+            thisplayer.game.setSize(data[0],data[1])
+        }
+        thisplayer.room=room
+        if (data[2]>=0) {
+            setTimeout(function(){
+                //重置游戏
+                var newgame = new Game().init(data[0],data[1])
+                if(thisplayer.gameview){
+                    var game=newgame
+                    thisplayer.gameview.init(game,'hasInited')
+                }
+                var p1=thisplayer.game.player[0].pointer
+                var p2=thisplayer.game.player[1].pointer
+                if(data[2]!==thisplayer.playerId){ //交换先后手
+                    p1.init(newgame,thisplayer.gameview).bind(1)
+                    p2.init(newgame,thisplayer.gameview).bind(0)
+                } else {
+                    p1.init(newgame,thisplayer.gameview).bind(0)
+                    p2.init(newgame,thisplayer.gameview).bind(1)
+                }
+                
+                printtip("连接中！\n你当前"+(data[2]==1?"先手":"后手")+"。")
+                thisplayer.socket.emit('ready', thisplayer.room)
+            },1000)
+        } else {
+            printtip("观战模式")
+            updateBoard(board)
+        }
+    })
+
+    socket.on('ready', function() {
+        if (thisplayer.playerId>=0) {
+            printtip("开始游戏！\n你当前"+(thisplayer.playerId==1?"先手":"后手")+"。")
+            thisplayer.ready() //thisplayer.game.lock=thisplayer.playerId==1?0:1
+        }
+    })
+
+    socket.on('error', function(reason) {
+        printtip("\t[错误]"+(reason||"未知错误"))
+        endgame()
+    })
+
+    socket.on('put', function(data) {
+        if (data[2]!=thisplayer.playerId && thisplayer.playerId>=0) {
+            put_down(data[0], data[1], data[2])
+        }
+    })
+
+    socket.on('msg', function (data, room) {
+        if (data[1]<0 || data[1]!=thisplayer.playerId) { //-1游客 0先手 1后手 2系统
+            printtip((data[1]>=0?"对方消息：":data[1]==2?"":"游客消息：")+data[0]);
+        }
+    })
+
+    socket.on('board', function (board) {
+        if (thisplayer.playerId==-1) {
+            updateBoard(board);
+        }
+    })
+}
+NetworkPlayer.prototype.connect=function(){
+    this.socket.emit('join', this.room, [this.game.xsize, this.game.ysize, this.playerId]); // getinput -> room, 0 for rand match
+    var printtip = this.printtip
+    printtip("正在等待其他玩家加入，请稍后...")
+}
+NetworkPlayer.prototype.ready=function(){
+    this.game.player[0].changeTurn()
+}
+
+////////////////// AIPlayer //////////////////
+AIPlayer=function(){
+    GamePlayer.call(this)
+    return this
+}
+AIPlayer.prototype = Object.create(GamePlayer.prototype)
+AIPlayer.prototype.constructor = AIPlayer
+
+AIPlayer.prototype.init=function(game){
+    this.game=game
+    this.gameData=new GameData().fromGame(game)
+    return this
+}
+AIPlayer.prototype.bind=function(playerId,callback){
+    new GamePlayer().bind.call(this,playerId,callback)
+    var thisplayer = this
+    thisplayer.emitPut=function(x,y){
+        thisplayer.gameData.putxy(x,y)
+    }
+    thisplayer.emitWin=function(){
+    }
+    this.game.changeEdge.push(thisplayer.emitPut)
+    this.game.win.push(thisplayer.emitWin)
+    return this
+}
+AIPlayer.prototype.remove=function(){
+    new GamePlayer().remove.call(this)
+    var index = this.game.changeEdge.indexOf(this.emitPut)
+    this.game.changeEdge.splice(index,1)
+    this.emitPut=null
+    var index = this.game.changeEdge.indexOf(this.emitWin)
+    this.game.win.splice(index,1)
+    this.emitWin=null
+}
+AIPlayer.prototype.where=function(){
+    var gameData=this.gameData
+    for(var jj=0;jj<2*gameData.ysize+1;jj++){
+        for(var ii=0;ii<2*gameData.xsize+1;ii++){
+            if([gameData.EDGE_NOW,gameData.EDGE_NOT,gameData.EDGE_WILL].indexOf(gameData.xy(ii,jj))===-1){
+                return {'x':ii,'y':jj};
+            }
+        }
+    }
+}
+AIPlayer.prototype.changeTurn=function(){
+    var thisplayer = this
+    thisplayer.game.lock=1
+    var where = this.where()
+    setTimeout(function(){
+        thisplayer.game.lock=0
+        thisplayer.game.putxy(where.x,where.y)
+    },250)
+}
+AIPlayer.prototype.continueTurn=function(){
+    var thisplayer = this
+    thisplayer.game.lock=1
+    var where = this.where()
+    setTimeout(function(){
+        thisplayer.game.lock=0
+        thisplayer.game.putxy(where.x,where.y)
+    },120)
+}
+
+////////////////// GreedyRandomAI //////////////////
+GreedyRandomAI=function(){
+    AIPlayer.call(this)
+    return this
+}
+GreedyRandomAI.prototype = Object.create(AIPlayer.prototype)
+GreedyRandomAI.prototype.constructor = GreedyRandomAI
+
+GreedyRandomAI.prototype.rand=function(n){
+    if(!n)return Math.random();
+    return ~~(n*Math.random())
+}
+
+GreedyRandomAI.prototype.getRandWhere=function(number){
+    var gameData=this.gameData
+    var count=gameData.edgeCount[number];
+    if(!count)return 'not exist';
+    var index = this.rand(count)
+    // TODO: 修改实现, 改为随机起点找第一个, 或者更快的实现
+    for(var jj=0;jj<2*gameData.ysize+1;jj++){
+        for(var ii=0;ii<2*gameData.xsize+1;ii++){
+            if(gameData.xy(ii,jj)===number){
+                if(!index)return {'x':ii,'y':jj};
+                index--;
+            }
+        }
+    }
+    return 'error'
+}
+
+GreedyRandomAI.prototype.tryKeepOffensive=function(){
+    // Greedy不维护先手
+    return this.getRandWhere(this.gameData.EDGE_NOW)
+}
+
+GreedyRandomAI.prototype.where=function(){
+    var gameData=this.gameData
+    var number = gameData.EDGE_NOW
+    if(gameData.edgeCount[gameData.EDGE_NOW]){number = gameData.EDGE_NOW} //有得分块
+    else if(gameData.edgeCount[gameData.EDGE_NOT]){number = gameData.EDGE_NOT} //无法得分且无需让分
+    else {number = gameData.EDGE_WILL} //需让分
+    //
+    if(number!==gameData.EDGE_WILL){
+        if(number===gameData.EDGE_NOW && gameData.edgeCount[gameData.EDGE_NOT]===0){var where = this.tryKeepOffensive()}
+        else {var where = this.getRandWhere(number)}
+    } else {
+        var where = gameData.getOneEdgeFromRegion(gameData.getMinConnectedRegion())
+    }
+    return where
+}
+
+////////////////// OffensiveKeeperAI //////////////////
+OffensiveKeeperAI=function(){
+    GreedyRandomAI.call(this)
+    return this
+}
+OffensiveKeeperAI.prototype = Object.create(GreedyRandomAI.prototype)
+OffensiveKeeperAI.prototype.constructor = OffensiveKeeperAI
+
+OffensiveKeeperAI.prototype.tryKeepOffensive=function(){
+    var gameData=this.gameData
+    var scoreRegions=gameData.getScoreRegions().map(function(region){
+        return region.index
+    })
+    if(!scoreRegions.length){
+        return this.getRandWhere(gameData.EDGE_NOW)
+    }
+    var scoreRegionSet={}
+    for(var ss=0;ss<scoreRegions.length;ss++){
+        scoreRegionSet[scoreRegions[ss]]=true
+    }
+
+    var eatOne = gameData.getOneEdgeFromRegionIndex(scoreRegions[0]) // >随便吃一块时的值
+    if(!eatOne){
+        return this.getRandWhere(gameData.EDGE_NOW)
+    }
+
+    // 最后一块直接吃掉
+    if(gameData.regionNum==1) return eatOne;
+
+    // >按照大小分类
+    var regions={};
+    for(var ii in gameData.connectedRegion){
+        var region = gameData.connectedRegion[ii]
+        if(!region)continue;
+        var len = region.block.length
+        regions[len]=regions[len]||[]
+        regions[len].push(region.index)
+    }
+
+    // 有得分单块
+    if(regions[1]){
+        for(var ii=0;ii<regions[1].length;ii++){
+            var regionIndex=regions[1][ii];
+            if(scoreRegionSet[regionIndex])return gameData.getOneEdgeFromRegionIndex(regionIndex);
+        }
+    }
+
+    // 有得分双块且还有别的能得分的块
+    if(regions[2] && scoreRegions.length>1){
+        for(var ii=0;ii<regions[2].length;ii++){
+            var regionIndex=regions[2][ii];
+            if(scoreRegionSet[regionIndex])return gameData.getOneEdgeFromRegionIndex(regionIndex);
+        }
+    }
+
+    // 多于两个块按先吃环的顺序吃掉一个
+    if(scoreRegions.length>2){
+        for(var ii in scoreRegions){
+            var region = gameData.connectedRegion[scoreRegions[ii]]
+            if(!region)continue;
+            if(region.isRing)return gameData.getOneEdgeFromRegion(region);
+        }
+        return eatOne;
+    }
+
+    // 两个块且第二个是环
+    if(scoreRegions.length===2){
+        var region2=gameData.connectedRegion[scoreRegions[1]]
+        if(region2 && region2.isRing)return gameData.getOneEdgeFromRegionIndex(scoreRegions[1]);
+    }
+
+    // 两个块
+    if(scoreRegions.length===2)return eatOne;
+    
+    // >此时只有一个块了
+    var region=gameData.connectedRegion[scoreRegions[0]];
+    if(!region)return eatOne;
+
+    // 长度不是4的环
+    if(region.isRing && region.block.length!==4)return eatOne;
+
+    // 长度不是2的长条
+    if(!region.isRing && region.block.length!==2)return eatOne;
+
+    // >让分数拿先手
+    var stack=region.block;
+    // 长度是4的环
+    if(region.block.length===4) return {'x':(stack[1].x+stack[2].x)/2,'y':(stack[1].y+stack[2].y)/2};
+    // 长度是2的长条
+    var p1=1
+    if(gameData.xy(stack[0].x,stack[0].y)!==gameData.SCORE_3){
+        p1=0
+    }
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx=stack[p1].x+d.x, yy=stack[p1].y+d.y
+        var xxx=stack[p1].x+2*d.x, yyy=stack[p1].y+2*d.y
+        if(gameData.xy(xx,yy)!==gameData.EDGE_USED && gameData.xy(xxx,yyy)=='out range')return {'x':xx,'y':yy};
+    }
+
+    return eatOne;
+}
+
+////////////////// RolloutAI //////////////////
+RolloutAI=function(){
+    OffensiveKeeperAI.call(this)
+    return this
+}
+RolloutAI.prototype = Object.create(OffensiveKeeperAI.prototype)
+RolloutAI.prototype.constructor = RolloutAI
+
+RolloutAI.prototype.MAX_SAFE_SIM=15
+
+RolloutAI.prototype.where = function(){
+    var gameData = this.gameData
+
+    // 收官判定点：比较全吃和让分
+    if(gameData.edgeCount[gameData.EDGE_NOW]>0 && gameData.edgeCount[gameData.EDGE_NOT]===0){
+        if(this.isDecisionPoint(gameData)){
+            var region = gameData.connectedRegion[gameData.scoreRegion[0]]
+            if(region){
+                var eatResult = this.simulateBranch(gameData,'eat',region)
+                var yieldResult = this.simulateBranch(gameData,'yield',region)
+                if(yieldResult>eatResult){
+                    var yieldEdge = this.pickYieldEdge(gameData,region)
+                    if(yieldEdge)return yieldEdge
+                }
+            }
+        }
+        return OffensiveKeeperAI.prototype.where.call(this)
+    }
+
+    // 安全步：对候选安全边做 rollout
+    if(gameData.edgeCount[gameData.EDGE_NOW]===0 && gameData.edgeCount[gameData.EDGE_NOT]>0){
+        return this.pickBestSafeMove(gameData)
+    }
+
+    // 有分且还有安全边时，保持 OK 的吃法
+    if(gameData.edgeCount[gameData.EDGE_NOW]>0){
+        return this.getRandWhere(gameData.EDGE_NOW)
+    }
+
+    // 必须让分时，让最小闭区域
+    return gameData.getOneEdgeFromRegion(gameData.getMinConnectedRegion())
+}
+
+RolloutAI.prototype.simulateBranch = function(gameData,branchType,region){
+    var sim = gameData.clone()
+    var myId = this.playerId
+
+    if(branchType==='eat'){
+        var eatEdge = sim.getOneEdgeFromRegion(sim.connectedRegion[region.index] || region)
+        if(!eatEdge)return -Infinity
+        sim.putxy(eatEdge.x,eatEdge.y)
+        while(sim.edgeCount[sim.EDGE_NOW]>0 && sim.winnerId==null){
+            var edge = this.pickEatableEdge(sim)
+            if(!edge)break
+            sim.putxy(edge.x,edge.y)
+        }
+    } else {
+        var simRegion = sim.connectedRegion[region.index] || region
+        var yieldEdge = this.pickYieldEdge(sim,simRegion)
+        if(!yieldEdge)return -Infinity
+        sim.putxy(yieldEdge.x,yieldEdge.y)
+    }
+
+    this.simulateToEnd(sim)
+    return sim.player[myId].score - sim.player[1-myId].score
+}
+
+RolloutAI.prototype.simulateToEnd = function(sim){
+    var maxSteps = 200
+    while(sim.winnerId==null && maxSteps-->0){
+        var okAi = new OffensiveKeeperAI()
+        okAi.playerId = sim.playerId
+        okAi.gameData = sim
+        try{
+            var where = OffensiveKeeperAI.prototype.where.call(okAi)
+        }catch(e){
+            if(sim.edgeCount[sim.EDGE_NOW]>0){
+                var edges = sim.getAllEdges(sim.EDGE_NOW)
+                if(edges.length>0){
+                    sim.putxy(edges[0].x,edges[0].y)
+                    continue
+                }
+            }
+            break
+        }
+        if(!where || where.x==null)break
+        sim.putxy(where.x,where.y)
+    }
+}
+
+RolloutAI.prototype.pickBestSafeMove = function(gameData){
+    var edges = gameData.getAllEdges(gameData.EDGE_NOT)
+    if(edges.length===0)return null
+    if(edges.length===1)return edges[0]
+
+    var myId = this.playerId
+    var best = null
+    var bestScore = -Infinity
+    var candidates = edges.slice()
+
+    if(candidates.length>this.MAX_SAFE_SIM){
+        for(var i=candidates.length-1;i>0;i--){
+            var j = ~~(Math.random()*(i+1))
+            var tmp = candidates[i]
+            candidates[i] = candidates[j]
+            candidates[j] = tmp
+        }
+        candidates = candidates.slice(0,this.MAX_SAFE_SIM)
+    }
+
+    for(var ii=0;ii<candidates.length;ii++){
+        var sim = gameData.clone()
+        var candidate = candidates[ii]
+        sim.putxy(candidate.x,candidate.y)
+        if(sim.winnerId!=null){
+            var terminalScore = sim.player[myId].score - sim.player[1-myId].score
+            if(terminalScore>bestScore){
+                bestScore = terminalScore
+                best = candidate
+            }
+            continue
+        }
+        while(sim.edgeCount[sim.EDGE_NOW]>0 && sim.winnerId==null){
+            var okAi = new OffensiveKeeperAI()
+            okAi.playerId = sim.playerId
+            okAi.gameData = sim
+            try{
+                var where = OffensiveKeeperAI.prototype.where.call(okAi)
+            }catch(e){
+                var eList = sim.getAllEdges(sim.EDGE_NOW)
+                if(eList.length>0){
+                    sim.putxy(eList[0].x,eList[0].y)
+                    continue
+                }
+                break
+            }
+            if(!where || where.x==null)break
+            sim.putxy(where.x,where.y)
+        }
+        this.simulateToEnd(sim)
+        var score = sim.player[myId].score - sim.player[1-myId].score
+        if(score>bestScore){
+            bestScore = score
+            best = candidate
+        }
+    }
+
+    return best || edges[0]
+}
+
+RolloutAI.prototype.isDecisionPoint = function(gameData){
+    if(gameData.edgeCount[gameData.EDGE_NOW]===0)return false
+    if(gameData.edgeCount[gameData.EDGE_NOT]>0)return false
+    if(gameData.regionNum<=1)return false
+    if(gameData.scoreRegion.length!==1)return false
+
+    var region = gameData.connectedRegion[gameData.scoreRegion[0]]
+    if(!region || !region.block)return false
+
+    if(!region.isRing && region.block.length===2)return true
+    if(region.isRing && region.block.length===4)return true
+
+    return false
+}
+
+RolloutAI.prototype.safeGetEdgeFromScoreRegion = function(gameData){
+    for(var ii=0;ii<gameData.scoreRegion.length;ii++){
+        var region = gameData.connectedRegion[gameData.scoreRegion[ii]]
+        if(region)return gameData.getOneEdgeFromRegion(region)
+    }
+    var edges = gameData.getAllEdges(gameData.EDGE_NOW)
+    if(edges.length>0)return edges[0]
+    return null
+}
+
+RolloutAI.prototype.pickEatableEdge = function(gameData){
+    if(gameData.regionNum<=1){
+        return this.safeGetEdgeFromScoreRegion(gameData)
+    }
+    var regions = {}
+    for(var ii in gameData.connectedRegion){
+        var region = gameData.connectedRegion[ii]
+        if(!region)continue
+        var len = region.block.length
+        regions[len] = regions[len] || []
+        regions[len].push(region.index)
+    }
+    if(regions[1]){
+        for(var jj=0;jj<regions[1].length;jj++){
+            if(gameData.scoreRegion.indexOf(regions[1][jj])!==-1){
+                return gameData.getOneEdgeFromRegionIndex(regions[1][jj])
+            }
+        }
+    }
+    if(regions[2] && gameData.scoreRegion.length>1){
+        for(var kk=0;kk<regions[2].length;kk++){
+            if(gameData.scoreRegion.indexOf(regions[2][kk])!==-1){
+                return gameData.getOneEdgeFromRegionIndex(regions[2][kk])
+            }
+        }
+    }
+    if(gameData.scoreRegion.length>2){
+        for(var mm=0;mm<gameData.scoreRegion.length;mm++){
+            var ringRegion = gameData.connectedRegion[gameData.scoreRegion[mm]]
+            if(ringRegion && ringRegion.isRing)return gameData.getOneEdgeFromRegion(ringRegion)
+        }
+        return this.safeGetEdgeFromScoreRegion(gameData)
+    }
+    if(gameData.scoreRegion.length===2){
+        var region2 = gameData.connectedRegion[gameData.scoreRegion[1]]
+        if(region2 && region2.isRing)return gameData.getOneEdgeFromRegion(region2)
+        return this.safeGetEdgeFromScoreRegion(gameData)
+    }
+    return this.safeGetEdgeFromScoreRegion(gameData)
+}
+
+RolloutAI.prototype.pickYieldEdge = function(gameData,region){
+    if(!region || !region.block)return null
+    var stack = region.block
+    if(region.isRing){
+        var mid = ~~(region.block.length/2)
+        return {x:(stack[mid-1].x+stack[mid].x)/2,y:(stack[mid-1].y+stack[mid].y)/2}
+    }
+    var p1 = gameData.xy(stack[0].x,stack[0].y)!==gameData.SCORE_3 ? 0 : region.block.length-1
+    var directions = [{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx = stack[p1].x+d.x
+        var yy = stack[p1].y+d.y
+        var xxx = stack[p1].x+2*d.x
+        var yyy = stack[p1].y+2*d.y
+        if(gameData.xy(xx,yy)!==gameData.EDGE_USED && gameData.xy(xxx,yyy)==='out range'){
+            return {x:xx,y:yy}
+        }
+    }
+    return null
+}
+
+
+////////////////// TreeSearchAI //////////////////
+TreeSearchAI=function(){
+    GreedyRandomAI.call(this)
+    return this
+}
+TreeSearchAI.prototype = Object.create(GreedyRandomAI.prototype)
+TreeSearchAI.prototype.constructor = TreeSearchAI
+
+TreeSearchAI.prototype.SEARCH_DEPTH=3
+TreeSearchAI.prototype.QUIESCENCE_DEPTH=10
+TreeSearchAI.prototype.ENDGAME_DEPTH=16
+TreeSearchAI.prototype.ENDGAME_SAFE_EDGE_THRESHOLD=6
+TreeSearchAI.prototype.EXACT_SAFE_EDGE_LIMIT=5
+TreeSearchAI.prototype.MAX_SCORE=100000000
+TreeSearchAI.prototype.SAFE_ROUTE_LIMIT=8
+TreeSearchAI.prototype.SACRIFICE_ROUTE_LIMIT=6
+TreeSearchAI.prototype.SCORE_ROUTE_LIMIT=12
+TreeSearchAI.prototype.TURN_END_ROUTE_LIMIT=4
+TreeSearchAI.prototype.IRRELEVANT_SKIP_LIMIT=12
+TreeSearchAI.prototype.OK_ENDGAME_ROUTE_BONUS=2400
+TreeSearchAI.prototype.TIME_BUDGET_MS=0
+TreeSearchAI.prototype.NODE_BUDGET=0
+
+TreeSearchAI.prototype.where = function(){
+    var boardKey=this.gameData.getBoardKey()
+    if(this.routePlan && this.routePlan.length && this.routePlan[0].key===boardKey){
+        return this.routePlan.shift().move
+    }
+
+    var maxDepth=this.search_depth!=undefined?this.search_depth:this.SEARCH_DEPTH
+    var timeBudgetMs=this.timeBudgetMs!=undefined?this.timeBudgetMs:this.TIME_BUDGET_MS
+    var nodeBudget=this.nodeBudget!=undefined?this.nodeBudget:this.NODE_BUDGET
+    this.routePlan=[]
+    this.transposition={}
+    this.historyTable={}
+    this.exactEndgameCache={}
+    this.abortToken={}
+    this.searchDeadline=timeBudgetMs>0?Date.now()+timeBudgetMs:0
+    this.searchNodeBudget=nodeBudget>0?nodeBudget:0
+    this.searchStats={
+        node:0,
+        cacheHit:0,
+        cut:0,
+        ttCut:0,
+        completedDepth:0,
+        aborted:false,
+    }
+
+    var best=null
+    for(var depth=1;depth<=maxDepth;depth++){
+        this.searchStats.iterationDepth=depth
+        try{
+            var current=this.searchRoot(this.gameData,depth)
+            if(current && current.route){
+                best=current
+                this.searchStats.completedDepth=depth
+            }
+        } catch(e){
+            if(e!==this.abortToken)throw e
+            this.searchStats.aborted=true
+            break
+        }
+    }
+    this.lastSearchStats=this.searchStats
+    if(best && best.route && best.route.moves && best.route.moves.length){
+        this.routePlan=this.buildRoutePlan(this.gameData,best.route.moves)
+        if(this.routePlan.length && this.routePlan[0].key===boardKey){
+            return this.routePlan.shift().move
+        }
+    }
+    return this.getFallbackWhere(this.gameData)
+}
+
+TreeSearchAI.prototype.buildRoutePlan = function(gameData, moves){
+    if(!this.isValidRouteMoves(moves))return []
+    var current=gameData.clone()
+    var plan=[]
+    for(var ii=0;ii<moves.length;ii++){
+        var move=moves[ii]
+        plan.push({
+            key:current.getBoardKey(),
+            move:{'x':move.x,'y':move.y},
+        })
+        current.putxy(move.x,move.y)
+        if(current.winnerId!=null)break
+    }
+    return plan
+}
+
+TreeSearchAI.prototype.isValidMove = function(move){
+    return !!move && move.x!=null && move.y!=null
+}
+
+TreeSearchAI.prototype.isValidRouteMoves = function(moves){
+    if(!moves || !moves.length)return false
+    for(var ii=0;ii<moves.length;ii++){
+        var move=moves[ii]
+        if(!this.isValidMove(move))return false
+    }
+    return true
+}
+
+TreeSearchAI.prototype.checkSearchAbort = function(){
+    if(this.searchNodeBudget && this.searchStats.node>=this.searchNodeBudget){
+        this.searchStats.abortReason='node'
+        throw this.abortToken
+    }
+    if(this.searchDeadline && Date.now()>this.searchDeadline){
+        this.searchStats.abortReason='time'
+        throw this.abortToken
+    }
+}
+
+TreeSearchAI.prototype.getTranspositionEntry = function(prefix, gameData){
+    return this.transposition[prefix+'|'+gameData.getBoardKey()]
+}
+
+TreeSearchAI.prototype.lookupTransposition = function(prefix, gameData, depth, alpha, beta){
+    var entry=this.getTranspositionEntry(prefix,gameData)
+    if(!entry || entry.depth<depth){
+        return {
+            alpha:alpha,
+            beta:beta,
+            entry:entry||null,
+        }
+    }
+    this.searchStats.cacheHit++
+    if(entry.flag==='exact'){
+        return {
+            hit:true,
+            value:entry.value,
+            alpha:alpha,
+            beta:beta,
+            entry:entry,
+        }
+    }
+    if(entry.flag==='lower' && entry.value>alpha)alpha=entry.value
+    if(entry.flag==='upper' && entry.value<beta)beta=entry.value
+    if(alpha>=beta){
+        this.searchStats.ttCut++
+        return {
+            hit:true,
+            value:entry.value,
+            alpha:alpha,
+            beta:beta,
+            entry:entry,
+        }
+    }
+    return {
+        alpha:alpha,
+        beta:beta,
+        entry:entry,
+    }
+}
+
+TreeSearchAI.prototype.storeTransposition = function(prefix, gameData, depth, value, alphaOrig, betaOrig, bestRoute){
+    var flag='exact'
+    if(value<=alphaOrig){
+        flag='upper'
+    } else if(value>=betaOrig){
+        flag='lower'
+    }
+    this.transposition[prefix+'|'+gameData.getBoardKey()]={
+        depth:depth,
+        value:value,
+        flag:flag,
+        bestStateKey:bestRoute?bestRoute.stateKey:null,
+    }
+}
+
+TreeSearchAI.prototype.orderRoutes = function(routes, ttEntry, maximizing){
+    var historyTable=this.historyTable||{}
+    var bestStateKey=ttEntry && ttEntry.bestStateKey
+    maximizing=maximizing!==false
+    return routes.slice().sort(function(a,b){
+        var att=bestStateKey && a.stateKey===bestStateKey?1:0
+        var btt=bestStateKey && b.stateKey===bestStateKey?1:0
+        if(att!==btt)return btt-att
+        var ah=historyTable[a.stateKey]||0
+        var bh=historyTable[b.stateKey]||0
+        if(ah!==bh)return bh-ah
+        return maximizing?(b.order-a.order):(a.order-b.order)
+    })
+}
+
+TreeSearchAI.prototype.recordHistory = function(route, depth){
+    if(!route || !route.stateKey)return
+    this.historyTable[route.stateKey]=(this.historyTable[route.stateKey]||0)+depth*depth
+}
+
+TreeSearchAI.prototype.shouldExtendEndgame = function(gameData, stats){
+    stats=stats||gameData.getRegionStats()
+    return (
+        gameData.isEndgamePhase() ||
+        gameData.edgeCount[gameData.EDGE_NOT]<=this.ENDGAME_SAFE_EDGE_THRESHOLD
+    ) && stats.largeClosedNum>0
+}
+
+TreeSearchAI.prototype.searchRoot = function(gameData, depth){
+    var ttEntry=this.getTranspositionEntry('s',gameData)
+    var routes=this.generateRoutes(gameData)
+    if(!gameData.edgeCount[gameData.EDGE_NOT]){
+        routes=this.generateExactRoutes(gameData)
+    }
+    routes=this.orderRoutes(routes,ttEntry,true)
+    if(!routes.length)return null
+    var alpha=-this.MAX_SCORE
+    var beta=this.MAX_SCORE
+    var bestRoute=routes[0]
+    var bestValue=-this.MAX_SCORE
+    for(var ii=0,route;route=routes[ii];ii++){
+        this.checkSearchAbort()
+        var next=route.state||this.applyRouteToClone(gameData,route.moves)
+        if(!next)continue
+        this.advanceIrrelevantState(next,this.IRRELEVANT_SKIP_LIMIT)
+        var value=this.searchState(next,depth-1,alpha,beta)
+        if(value>bestValue){
+            bestValue=value
+            bestRoute=route
+        }
+        if(value>alpha)alpha=value
+    }
+    return {
+        route:bestRoute,
+        value:bestValue,
+    }
+}
+
+TreeSearchAI.prototype.searchState = function(gameData, depth, alpha, beta){
+    this.searchStats.node++
+    this.checkSearchAbort()
+    this.advanceIrrelevantState(gameData,this.IRRELEVANT_SKIP_LIMIT)
+    if(gameData.winnerId!=null){
+        return this.getTerminalScore(gameData)
+    }
+    if(gameData.edgeCount[gameData.EDGE_NOT]<=this.EXACT_SAFE_EDGE_LIMIT){
+        return this.solveLateEndgame(gameData)
+    }
+    if(depth<=0){
+        return this.searchQuiescence(
+            gameData,
+            this.shouldExtendEndgame(gameData)?this.ENDGAME_DEPTH:this.QUIESCENCE_DEPTH,
+            alpha,
+            beta
+        )
+    }
+
+    var alphaOrig=alpha
+    var betaOrig=beta
+    var ttInfo=this.lookupTransposition('s',gameData,depth,alpha,beta)
+    if(ttInfo.hit){
+        return ttInfo.value
+    }
+    alpha=ttInfo.alpha
+    beta=ttInfo.beta
+
+    var maximizing=gameData.playerId===this.playerId
+    var routes=this.orderRoutes(this.generateRoutes(gameData),ttInfo.entry,maximizing)
+    if(!routes.length){
+        return this.evaluate(gameData)
+    }
+
+    var best=maximizing?-this.MAX_SCORE:this.MAX_SCORE
+    var bestRoute=null
+    for(var ii=0,route;route=routes[ii];ii++){
+        this.checkSearchAbort()
+        var next=route.state||this.applyRouteToClone(gameData,route.moves)
+        if(!next)continue
+        var value=this.searchState(next,depth-1,alpha,beta)
+        if(maximizing){
+            if(value>best){
+                best=value
+                bestRoute=route
+            }
+            if(best>alpha)alpha=best
+            if(alpha>=beta){
+                this.searchStats.cut++
+                this.recordHistory(route,depth)
+                break
+            }
+            continue
+        }
+        if(value<best){
+            best=value
+            bestRoute=route
+        }
+        if(best<beta)beta=best
+        if(alpha>=beta){
+            this.searchStats.cut++
+            this.recordHistory(route,depth)
+            break
+        }
+    }
+    this.storeTransposition('s',gameData,depth,best,alphaOrig,betaOrig,bestRoute)
+    return best
+}
+
+TreeSearchAI.prototype.searchQuiescence = function(gameData, depth, alpha, beta){
+    this.searchStats.node++
+    this.checkSearchAbort()
+    this.advanceIrrelevantState(gameData,this.IRRELEVANT_SKIP_LIMIT)
+    if(gameData.winnerId!=null){
+        return this.getTerminalScore(gameData)
+    }
+    if(gameData.edgeCount[gameData.EDGE_NOT]<=this.EXACT_SAFE_EDGE_LIMIT){
+        return this.solveLateEndgame(gameData)
+    }
+    var stats=gameData.getRegionStats()
+    var stand=this.evaluate(gameData)
+    var shouldContinue=gameData.edgeCount[gameData.EDGE_NOW] || this.shouldExtendEndgame(gameData,stats)
+    if(depth<=0 || !shouldContinue){
+        return stand
+    }
+
+    var alphaOrig=alpha
+    var betaOrig=beta
+    var ttInfo=this.lookupTransposition('q',gameData,depth,alpha,beta)
+    if(ttInfo.hit){
+        return ttInfo.value
+    }
+    alpha=ttInfo.alpha
+    beta=ttInfo.beta
+    var maximizing=gameData.playerId===this.playerId
+    if(maximizing){
+        if(stand>alpha)alpha=stand
+    } else {
+        if(stand<beta)beta=stand
+    }
+    if(alpha>=beta){
+        return stand
+    }
+
+    var best=stand
+    var routes=this.orderRoutes(this.generateRoutes(gameData),ttInfo.entry,maximizing)
+    if(!routes.length){
+        return stand
+    }
+
+    var bestRoute=null
+    for(var ii=0,route;route=routes[ii];ii++){
+        this.checkSearchAbort()
+        var next=route.state||this.applyRouteToClone(gameData,route.moves)
+        if(!next)continue
+        var value=this.searchQuiescence(next,depth-1,alpha,beta)
+        if(maximizing){
+            if(value>best){
+                best=value
+                bestRoute=route
+            }
+            if(best>alpha)alpha=best
+            if(alpha>=beta){
+                this.recordHistory(route,depth)
+                break
+            }
+            continue
+        }
+        if(value<best){
+            best=value
+            bestRoute=route
+        }
+        if(best<beta)beta=best
+        if(alpha>=beta){
+            this.recordHistory(route,depth)
+            break
+        }
+    }
+    this.storeTransposition('q',gameData,depth,best,alphaOrig,betaOrig,bestRoute)
+    return best
+}
+
+TreeSearchAI.prototype.getTerminalScore = function(gameData){
+    if(gameData.winnerId==null)return 0
+    return gameData.winnerId===this.playerId?this.MAX_SCORE:-this.MAX_SCORE
+}
+
+TreeSearchAI.prototype.advanceIrrelevantState = function(gameData, limit){
+    var rest=limit||0
+    while(rest>0 && gameData.winnerId==null){
+        if(gameData.edgeCount[gameData.EDGE_NOW])break
+        if(!gameData.edgeCount[gameData.EDGE_NOT])break
+        var analyses=gameData.getSafeEdgeAnalyses()
+        if(!analyses.length)break
+        var onlyIrrelevant=true
+        for(var ii=0,item;item=analyses[ii];ii++){
+            if(!item.isIrrelevant){
+                onlyIrrelevant=false
+                break
+            }
+        }
+        if(!onlyIrrelevant)break
+        gameData.putxy(analyses[0].edge.x,analyses[0].edge.y)
+        rest--
+    }
+}
+
+TreeSearchAI.prototype.applyRouteToClone = function(gameData, moves){
+    var next=gameData.clone()
+    if(!this.applyRouteInPlace(next,moves))return null
+    return next
+}
+
+TreeSearchAI.prototype.applyRouteInPlace = function(gameData, moves){
+    for(var ii=0;ii<moves.length;ii++){
+        var move=moves[ii]
+        if(!this.isValidMove(move))return false
+        if(
+            [gameData.EDGE_NOW,gameData.EDGE_NOT,gameData.EDGE_WILL]
+            .indexOf(gameData.xy(move.x,move.y))===-1
+        )return false
+        gameData.putxy(move.x,move.y)
+    }
+    return true
+}
+
+TreeSearchAI.prototype.generateRoutes = function(gameData){
+    if(gameData.edgeCount[gameData.EDGE_NOW]){
+        return this.generateScoreRoutes(gameData)
+    }
+    if(gameData.edgeCount[gameData.EDGE_NOT]){
+        return this.generateSafeRoutes(gameData)
+    }
+    return this.generateSacrificeRoutes(gameData)
+}
+
+TreeSearchAI.prototype.generateScoreRoutes = function(gameData){
+    var prefixes=this.generateScorePrefixes(gameData)
+    var routes=[]
+    for(var ii=0,prefix;prefix=prefixes[ii];ii++){
+        if(prefix.state.winnerId!=null || prefix.state.playerId!==gameData.playerId){
+            var directRoute=this.makeRouteCandidate(gameData,prefix.state,prefix.moves,prefix.tag)
+            if(directRoute)routes.push(directRoute)
+            continue
+        }
+
+        var enders=this.generateTurnEnderRoutes(prefix.state)
+        if(!enders.length){
+            continue
+        }
+
+        for(var jj=0,ender;ender=enders[jj];jj++){
+            var route=this.makeRouteCandidate(
+                gameData,
+                ender.state,
+                prefix.moves.concat(ender.moves),
+                prefix.tag+'+'+ender.tag
+            )
+            if(route){
+                route.order+=(ender.order||0)*8
+                routes.push(route)
+            }
+        }
+    }
+    return this.collectRepresentativeRoutes(routes,this.SCORE_ROUTE_LIMIT)
+}
+
+TreeSearchAI.prototype.generateScorePrefixes = function(gameData){
+    var prefixes=[]
+    var regions=this.getActiveScoreRegions(gameData)
+    var allPrefix=this.buildScorePrefix(gameData,{
+        type:'all',
+        tag:'score-all',
+    })
+    if(allPrefix)prefixes.push(allPrefix)
+    if(!regions.length)return prefixes
+    for(var ii=0,region;region=regions[ii];ii++){
+        var stopPrefix=this.buildScorePrefix(gameData,{
+            type:'stopBeforeLast',
+            tag:'score-stop',
+            regionIndex:region.index,
+        })
+        if(stopPrefix)prefixes.push(stopPrefix)
+
+        var controlPrefix=this.buildScorePrefix(gameData,{
+            type:'control',
+            tag:'score-control',
+            regionIndex:region.index,
+        })
+        if(controlPrefix)prefixes.push(controlPrefix)
+    }
+    return prefixes
+}
+
+TreeSearchAI.prototype.generateExactScorePrefixes = function(gameData){
+    var prefixes=[]
+    var regions=this.getActiveScoreRegions(gameData)
+    var allPrefix=this.buildScorePrefix(gameData,{
+        type:'all',
+        tag:'score-all',
+    })
+    if(allPrefix)prefixes.push(allPrefix)
+    if(!regions.length)return prefixes
+    for(var ii=0,region;region=regions[ii];ii++){
+        var controlPrefix=this.buildScorePrefix(gameData,{
+            type:'control',
+            tag:'score-control',
+            regionIndex:region.index,
+        })
+        if(controlPrefix){
+            prefixes.push(controlPrefix)
+            continue
+        }
+
+        var stopPrefix=this.buildScorePrefix(gameData,{
+            type:'stopBeforeLast',
+            tag:'score-stop',
+            regionIndex:region.index,
+        })
+        if(stopPrefix)prefixes.push(stopPrefix)
+    }
+    return prefixes
+}
+
+TreeSearchAI.prototype.buildScorePrefix = function(gameData, policy){
+    var current=gameData.clone()
+    var moves=[]
+    var rootPlayer=gameData.playerId
+    var guard=0
+    var targetIndex=policy.regionIndex
+
+    while(current.winnerId==null && current.playerId===rootPlayer && current.edgeCount[current.EDGE_NOW]){
+        guard++
+        if(guard>current.totalScore*2)return null
+
+        var regions=this.getActiveScoreRegions(current)
+        if(!regions.length)break
+
+        var targetRegion=null
+        if(targetIndex!=null){
+            targetRegion=this.findRegionByIndex(regions,targetIndex)
+            if(!targetRegion){
+                if(policy.type==='all'){
+                    targetIndex=null
+                } else {
+                    break
+                }
+            }
+            if(targetIndex!=null){
+                targetRegion=this.findRegionByIndex(regions,targetIndex)
+            }
+        }
+
+        var nextMoves=null
+        var shouldStop=false
+        var hasNonTarget=false
+        if(targetRegion){
+            hasNonTarget=regions.some(function(region){
+                return region.index!==targetRegion.index
+            })
+        }
+
+        if(policy.type==='all' && targetRegion){
+            nextMoves=this.getAllEatMoves(current,targetRegion)
+            targetIndex=null
+        } else if(policy.type==='all'){
+            nextMoves=this.getAllEatMoves(current,this.chooseScoreRegionToFinish(current,regions))
+        } else if(targetRegion && policy.type==='takeOne'){
+            nextMoves=this.getScorePrefixMoves(current,targetRegion,policy.type)
+            shouldStop=true
+        } else if(targetRegion && !hasNonTarget){
+            nextMoves=this.getScorePrefixMoves(current,targetRegion,policy.type)
+            shouldStop=true
+        } else if(targetRegion){
+            nextMoves=this.getAllEatMoves(
+                current,
+                this.chooseScoreRegionToFinish(current,regions,targetRegion.index)
+            )
+        }
+
+        if(!this.isValidRouteMoves(nextMoves))return null
+        if(!this.applyRouteInPlace(current,nextMoves))return null
+        moves=moves.concat(nextMoves)
+
+        if(shouldStop){
+            break
+        }
+    }
+
+    if(!moves.length)return null
+    return {
+        moves:moves,
+        state:current,
+        tag:policy.tag,
+    }
+}
+
+TreeSearchAI.prototype.getAllEatMoves = function(gameData, region){
+    if(!region)return null
+    return gameData.getAllEdgesFromRegion(region)
+}
+
+TreeSearchAI.prototype.getScorePrefixMoves = function(gameData, region, type){
+    if(!region)return null
+    if(type==='takeOne'){
+        var one=gameData.getOneEdgeFromRegion(region)
+        return one?[one]:null
+    }
+
+    var fullRoute=gameData.getAllEdgesFromRegion(region)
+    if(type==='stopBeforeLast'){
+        if(!fullRoute || fullRoute.length<=1)return null
+        return fullRoute.slice(0,-1)
+    }
+
+    if(type==='control'){
+        return this.getControlPrefixMoves(gameData,region)
+    }
+
+    return fullRoute
+}
+
+TreeSearchAI.prototype.getControlPrefixMoves = function(gameData, region){
+    if(!region || !region.block || !region.block.length)return null
+    var targetRemain=region.isRing?4:2
+    if(region.block.length<targetRemain)return null
+
+    var current=gameData.clone()
+    var moves=[]
+    var remain={}
+    for(var ii=0,pt;pt=region.block[ii];ii++){
+        remain[[pt.x,pt.y].join(',')]=true
+    }
+
+    var guard=region.block.length*2
+    while(guard>0 && current.playerId===gameData.playerId && current.edgeCount[current.EDGE_NOW]){
+        guard--
+        var scoreRegions=current.getScoreRegions()
+        var currentRegion=null
+        var bestOverlap=0
+        for(var jj=0,candidate;candidate=scoreRegions[jj];jj++){
+            var overlap=0
+            for(var kk=0,cell;cell=candidate.block[kk];kk++){
+                if(remain[[cell.x,cell.y].join(',')])overlap++
+            }
+            if(!overlap)continue
+            if(overlap>bestOverlap){
+                bestOverlap=overlap
+                currentRegion=candidate
+            }
+        }
+        if(!currentRegion)return null
+
+        if(currentRegion.block.length<=targetRemain){
+            var controlMove=this.getControlMoveFromRegion(current,currentRegion)
+            if(!controlMove)return null
+            moves.push(controlMove)
+            return moves
+        }
+
+        var take=current.getOneEdgeFromRegion(currentRegion)
+        if(!take || current.xy(take.x,take.y)!==current.EDGE_NOW)return null
+        moves.push(take)
+        current.putxy(take.x,take.y)
+    }
+    return null
+}
+
+TreeSearchAI.prototype.getControlMoveFromRegion = function(gameData, region){
+    if(!region)return null
+    var stack=region.block
+    if(region.isRing){
+        if(region.block.length!==4)return null
+        return {'x':(stack[1].x+stack[2].x)/2,'y':(stack[1].y+stack[2].y)/2}
+    }
+    if(region.block.length!==2)return null
+
+    var p1=1
+    if(gameData.xy(stack[0].x,stack[0].y)!==gameData.SCORE_3){
+        p1=0
+    }
+    var directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]
+    for(var ii=0,d;d=directions[ii];ii++){
+        var xx=stack[p1].x+d.x, yy=stack[p1].y+d.y
+        var xxx=stack[p1].x+2*d.x, yyy=stack[p1].y+2*d.y
+        if(gameData.xy(xx,yy)!==gameData.EDGE_USED && gameData.xy(xxx,yyy)==='out range'){
+            return {'x':xx,'y':yy}
+        }
+    }
+    return null
+}
+
+TreeSearchAI.prototype.getActiveScoreRegions = function(gameData){
+    return gameData.getScoreRegions().slice()
+}
+
+TreeSearchAI.prototype.findRegionByIndex = function(regions, regionIndex){
+    for(var ii=0,region;region=regions[ii];ii++){
+        if(region.index===regionIndex)return region
+    }
+    return null
+}
+
+TreeSearchAI.prototype.chooseScoreRegionToFinish = function(gameData, regions, skipIndex){
+    var list=regions.filter(function(region){
+        return region.index!==skipIndex
+    })
+    if(!list.length)return null
+    list.sort(function(a,b){
+        var ringA=a.isRing?1:0
+        var ringB=b.isRing?1:0
+        if(a.block.length!==b.block.length)return a.block.length-b.block.length
+        if(ringA!==ringB)return ringA-ringB
+        return a.index-b.index
+    })
+    return list[0]
+}
+
+TreeSearchAI.prototype.generateTurnEnderRoutes = function(gameData){
+    if(gameData.edgeCount[gameData.EDGE_NOT]){
+        return this.generateSafeRoutes(gameData,this.TURN_END_ROUTE_LIMIT)
+    }
+    if(gameData.edgeCount[gameData.EDGE_WILL]){
+        return this.generateSacrificeRoutes(gameData,this.TURN_END_ROUTE_LIMIT)
+    }
+    return []
+}
+
+TreeSearchAI.prototype.generateSafeRoutes = function(gameData, limit){
+    var analyses=gameData.getSafeEdgeAnalyses()
+    var routes=[]
+    var used={}
+    var structures=gameData.getControlSwingStructures(analyses)
+    for(var ii=0,structure;structure=structures[ii];ii++){
+        var controlRoute=this.makeRouteFromAnalysis(gameData,structure.analyses[0],'safe-control')
+        if(!controlRoute)continue
+        used[structure.analyses[0].edgeKey]=true
+        routes.push(controlRoute)
+    }
+
+    for(var jj=0,analysis;analysis=analyses[jj];jj++){
+        if(used[analysis.edgeKey] || analysis.isIrrelevant)continue
+        var shapeRoute=this.makeRouteFromAnalysis(gameData,analysis,'safe-shape')
+        if(!shapeRoute)continue
+        used[analysis.edgeKey]=true
+        routes.push(shapeRoute)
+    }
+
+    var irrelevantGroups={}
+    for(var kk=0,item;item=analyses[kk];kk++){
+        if(used[item.edgeKey] || !item.isIrrelevant)continue
+        if(
+            !irrelevantGroups[item.parityKey] ||
+            item.swingScore>irrelevantGroups[item.parityKey].swingScore
+        ){
+            irrelevantGroups[item.parityKey]=item
+        }
+    }
+    for(var name in irrelevantGroups){
+        var irrelevantRoute=this.makeRouteFromAnalysis(
+            gameData,
+            irrelevantGroups[name],
+            'safe-irrelevant'
+        )
+        if(!irrelevantRoute)continue
+        routes.push(irrelevantRoute)
+    }
+
+    return this.collectRepresentativeRoutes(routes,limit||this.SAFE_ROUTE_LIMIT)
+}
+
+TreeSearchAI.prototype.generateSacrificeRoutes = function(gameData, limit){
+    var analyses=gameData.getSacrificeEdgeAnalyses()
+    var routes=[]
+    for(var ii=0,analysis;analysis=analyses[ii];ii++){
+        var route=this.makeRouteFromAnalysis(gameData,analysis,'sacrifice')
+        if(!route)continue
+        routes.push(route)
+    }
+    return this.collectRepresentativeRoutes(routes,limit||this.SACRIFICE_ROUTE_LIMIT)
+}
+
+TreeSearchAI.prototype.generateExactRoutes = function(gameData){
+    if(gameData.edgeCount[gameData.EDGE_NOW]){
+        return this.generateExactScoreRoutes(gameData)
+    }
+    if(gameData.edgeCount[gameData.EDGE_NOT]){
+        return this.generateExactSafeRoutes(gameData)
+    }
+    return this.generateExactSacrificeRoutes(gameData)
+}
+
+TreeSearchAI.prototype.generateExactScoreRoutes = function(gameData){
+    var prefixes=this.generateExactScorePrefixes(gameData)
+    var routes=[]
+    for(var ii=0,prefix;prefix=prefixes[ii];ii++){
+        if(prefix.state.winnerId!=null || prefix.state.playerId!==gameData.playerId){
+            var directRoute=this.makeRouteCandidate(gameData,prefix.state,prefix.moves,prefix.tag)
+            if(directRoute)routes.push(directRoute)
+            continue
+        }
+
+        var enders=this.generateExactTurnEnderRoutes(prefix.state)
+        for(var jj=0,ender;ender=enders[jj];jj++){
+            var route=this.makeRouteCandidate(
+                gameData,
+                ender.state,
+                prefix.moves.concat(ender.moves),
+                prefix.tag+'+'+ender.tag
+            )
+            if(route){
+                route.order+=(ender.order||0)*8
+                routes.push(route)
+            }
+        }
+    }
+    return this.collectRepresentativeRoutes(routes)
+}
+
+TreeSearchAI.prototype.generateExactTurnEnderRoutes = function(gameData){
+    if(gameData.edgeCount[gameData.EDGE_NOT]){
+        return this.generateExactSafeRoutes(gameData)
+    }
+    if(gameData.edgeCount[gameData.EDGE_WILL]){
+        return this.generateExactSacrificeRoutes(gameData)
+    }
+    return []
+}
+
+TreeSearchAI.prototype.generateExactSafeRoutes = function(gameData){
+    var analyses=gameData.getSafeEdgeAnalyses()
+    var routes=[]
+    for(var ii=0,analysis;analysis=analyses[ii];ii++){
+        var tag='safe-shape'
+        if(analysis.isControlSwing){
+            tag='safe-control'
+        } else if(analysis.isIrrelevant){
+            tag='safe-irrelevant'
+        }
+        var route=this.makeRouteFromAnalysis(gameData,analysis,tag)
+        if(route)routes.push(route)
+    }
+    return this.collectRepresentativeRoutes(routes)
+}
+
+TreeSearchAI.prototype.getExactSacrificeBucketKey = function(analysis){
+    if(!analysis || !analysis.state)return null
+    var next=analysis.state
+    var stats=analysis.afterStats||next.getRegionStats()
+    var geometryParts=(analysis.geometryKey||'').split('|')
+    return [
+        analysis.categoryKey,
+        geometryParts[1]||'',
+        geometryParts[2]||'',
+        geometryParts[3]||'',
+        next.edgeCount[next.EDGE_NOW],
+        next.edgeCount[next.EDGE_NOT],
+        next.edgeCount[next.EDGE_WILL],
+        stats.scoreRegionNum,
+        stats.scoreCellNum,
+        stats.largeClosedNum,
+        stats.smallClosedNum,
+    ].join('|')
+}
+
+TreeSearchAI.prototype.generateExactSacrificeRoutes = function(gameData){
+    var okHint=this.getOkEndgameRolloutHint(gameData)
+    var analyses=this.getExactSacrificeRepresentativeAnalyses(gameData)
+    var routes=[]
+    for(var ii=0,analysis;analysis=analyses[ii];ii++){
+        var route=this.makeRouteFromAnalysis(gameData,analysis,'sacrifice')
+        if(!route)continue
+        route.order=this.getExactSacrificeRouteOrder(route,analysis)
+        route.order+=this.getExactSacrificeOkRouteBonus(gameData,route,okHint)
+        routes.push(route)
+    }
+    return this.collectRepresentativeRoutes(routes)
+}
+
+TreeSearchAI.prototype.getExactSacrificeRepresentativeKey = function(gameData, analysis){
+    if(
+        analysis &&
+        analysis.regionIndex!=null &&
+        this.shouldGroupExactSacrificeRegion(gameData,analysis)
+    ){
+        return 'region|'+analysis.regionIndex
+    }
+    return 'edge|'+analysis.edgeKey
+}
+
+TreeSearchAI.prototype.getExactSacrificeRepresentativeAnalyses = function(gameData, okHint){
+    var analyses=gameData.getSacrificeEdgeAnalyses()
+    var bucket={}
+    for(var ii=0,analysis;analysis=analyses[ii];ii++){
+        var key=this.getExactSacrificeRepresentativeKey(gameData,analysis)
+        if(!key)continue
+        if(
+            !bucket[key] ||
+            this.compareExactSacrificeRepresentativeAnalyses(
+                gameData,
+                analysis,
+                bucket[key].analysis
+            )>0
+        ){
+            bucket[key]={
+                analysis:analysis,
+                index:ii,
+            }
+        }
+    }
+    var grouped=[]
+    for(var name in bucket){
+        grouped.push(bucket[name])
+    }
+    grouped.sort(function(a,b){
+        return a.index-b.index
+    })
+    var selected=[]
+    for(var jj=0,item;item=grouped[jj];jj++){
+        selected.push(item.analysis)
+    }
+    return selected
+}
+
+TreeSearchAI.prototype.getExactSacrificeRegionTopology = function(gameData, analysis){
+    if(!gameData || !analysis || analysis.regionIndex==null)return null
+    gameData.__exactSacrificeRegionTopologyCache=
+        gameData.__exactSacrificeRegionTopologyCache||{}
+    if(gameData.__exactSacrificeRegionTopologyCache[analysis.regionIndex]){
+        return gameData.__exactSacrificeRegionTopologyCache[analysis.regionIndex]
+    }
+    var region=gameData.connectedRegion[analysis.regionIndex]
+    if(!region || !region.block || !region.block.length){
+        return null
+    }
+    var blockSet={}
+    var directions=[
+        {'x':0,'y':-2},
+        {'x':2,'y':0},
+        {'x':0,'y':2},
+        {'x':-2,'y':0},
+    ]
+    for(var ii=0,pt;pt=region.block[ii];ii++){
+        blockSet[[pt.x,pt.y].join(',')]=true
+    }
+    var maxDegree=0
+    var endpointCount=0
+    for(var jj=0,cell;cell=region.block[jj];jj++){
+        var degree=0
+        for(var kk=0,d;d=directions[kk];kk++){
+            var nearKey=[cell.x+d.x,cell.y+d.y].join(',')
+            if(blockSet[nearKey])degree++
+        }
+        if(degree>maxDegree)maxDegree=degree
+        if(degree===1)endpointCount++
+    }
+    var size=region.block.length
+    var isSimple=
+        size===1 ||
+        (
+            maxDegree<=2 &&
+            (region.isRing?endpointCount===0:endpointCount===2)
+        )
+    var topology={
+        size:size,
+        isRing:!!region.isRing,
+        maxDegree:maxDegree,
+        endpointCount:endpointCount,
+        isSimple:isSimple,
+    }
+    gameData.__exactSacrificeRegionTopologyCache[analysis.regionIndex]=topology
+    return topology
+}
+
+TreeSearchAI.prototype.shouldGroupExactSacrificeRegion = function(gameData, analysis){
+    var topology=this.getExactSacrificeRegionTopology(gameData,analysis)
+    if(!topology || !topology.isSimple)return false
+    return true
+}
+
+TreeSearchAI.prototype.getExactSacrificeRegionSharedCellCount = function(gameData, analysis){
+    if(!gameData || !analysis || analysis.regionIndex==null)return 0
+    var region=gameData.connectedRegion[analysis.regionIndex]
+    if(!region || !region.block || !region.block.length)return 0
+    var blockSet={}
+    for(var ii=0,pt;pt=region.block[ii];ii++){
+        blockSet[[pt.x,pt.y].join(',')]=true
+    }
+    var adjacent=gameData.getAdjacentCellsFromEdge(analysis.edge)
+    var count=0
+    for(var jj=0,cell;cell=adjacent[jj];jj++){
+        if(blockSet[[cell.x,cell.y].join(',')])count++
+    }
+    return count
+}
+
+TreeSearchAI.prototype.compareExactSacrificeRepresentativeAnalyses = function(
+    gameData,
+    analysisA,
+    analysisB
+){
+    var topology=this.getExactSacrificeRegionTopology(gameData,analysisA)
+    if(topology && topology.isSimple && !topology.isRing && topology.size===2){
+        // For L2 closed regions, keep the middle opening and avoid boundary ones.
+        var sharedA=this.getExactSacrificeRegionSharedCellCount(gameData,analysisA)
+        var sharedB=this.getExactSacrificeRegionSharedCellCount(gameData,analysisB)
+        if(sharedA!==sharedB)return sharedA-sharedB
+        return 0
+    }
+    return 0
+}
+
+TreeSearchAI.prototype.getOkEndgameRolloutHint = function(gameData){
+    this.okEndgameHintCache=this.okEndgameHintCache||{}
+    var key=gameData.getBoardKey()
+    if(Object.prototype.hasOwnProperty.call(this.okEndgameHintCache,key)){
+        return this.okEndgameHintCache[key]
+    }
+    if(gameData.edgeCount[gameData.EDGE_NOT]!==0){
+        this.okEndgameHintCache[key]=null
+        return null
+    }
+    var current=gameData.clone()
+    var rolloutAI=new OffensiveKeeperAI()
+    rolloutAI.gameData=current
+    rolloutAI.rand=function(){return 0}
+    var firstMove=null
+    var guard=Math.max(16,current.totalScore*4)
+    while(current.winnerId==null && guard>0){
+        var move=rolloutAI.where()
+        if(!this.isValidMove(move)){
+            firstMove=null
+            break
+        }
+        if(!firstMove){
+            firstMove={'x':move.x,'y':move.y}
+        }
+        current.putxy(move.x,move.y)
+        guard--
+    }
+    var hint=null
+    if(firstMove && current.winnerId!=null){
+        var diff=
+            current.player[gameData.playerId].score-
+            current.player[1-gameData.playerId].score
+        hint={
+            move:firstMove,
+            moveKey:[firstMove.x,firstMove.y].join(','),
+            currentPlayerWin:diff>0,
+            scoreDiff:diff,
+        }
+    }
+    this.okEndgameHintCache[key]=hint
+    return hint
+}
+
+TreeSearchAI.prototype.getExactSacrificeRouteOrder = function(route, analysis){
+    if(!route)return -this.MAX_SCORE
+    // Exact pure-sacrifice ordering should prefer the post-open structure itself;
+    // the local opening bonus is tuned for approximate route generation and
+    // over-prioritizes opening large chains in proven endgames.
+    if(analysis && analysis.regionSize>2){
+        return route.order-(analysis.orderBonus||0)
+    }
+    return route.order
+}
+
+TreeSearchAI.prototype.getExactSacrificeOkRouteBonus = function(gameData, route, okHint){
+    if(
+        !okHint ||
+        !okHint.currentPlayerWin ||
+        !route ||
+        !route.moves ||
+        !route.moves.length
+    )return 0
+    var move=route.moves[0]
+    var moveKey=[move.x,move.y].join(',')
+    if(moveKey!==okHint.moveKey){
+        var analysis=route.analysis
+        if(
+            !analysis ||
+            analysis.regionIndex==null ||
+            !this.shouldGroupExactSacrificeRegion(gameData,analysis)
+        )return 0
+        var regionIndices=gameData.getEdgeRegionIndices(okHint.move)
+        if(regionIndices.indexOf(analysis.regionIndex)===-1)return 0
+    }
+    return (gameData.playerId===this.playerId?1:-1)*this.OK_ENDGAME_ROUTE_BONUS
+}
+
+TreeSearchAI.prototype.collectEdgeRoutes = function(gameData, edges, limit, tag){
+    var routes=[]
+    var beforeTopology=this.getTopologyFingerprint(gameData)
+    for(var ii=0,edge;edge=edges[ii];ii++){
+        var next=gameData.clone()
+        next.putxy(edge.x,edge.y)
+        var route=this.makeRouteCandidate(gameData,next,[edge],tag)
+        if(!route)continue
+        route.isIrrelevant=(tag==='safe' && beforeTopology===this.getTopologyFingerprint(next))
+        route.order=this.getRouteOrderScore(gameData,next,[edge],tag,route.isIrrelevant)
+        routes.push(route)
+    }
+    return this.collectRepresentativeRoutes(routes,limit)
+}
+
+TreeSearchAI.prototype.makeRouteFromAnalysis = function(beforeGameData, analysis, tag){
+    if(!analysis)return null
+    var route=this.makeRouteCandidate(
+        beforeGameData,
+        analysis.state,
+        [analysis.edge],
+        tag,
+        analysis.isIrrelevant
+    )
+    if(!route)return null
+    route.analysis=analysis
+    route.order+=analysis.swingScore||0
+    route.order+=analysis.orderBonus||0
+    return route
+}
+
+TreeSearchAI.prototype.collectRepresentativeRoutes = function(routes, limit){
+    var bucket={}
+    for(var ii=0,route;route=routes[ii];ii++){
+        var key=route.tag+'|'+route.fingerprint
+        if(!bucket[key] || route.order>bucket[key].order){
+            bucket[key]=route
+        }
+    }
+    var list=[]
+    for(var name in bucket){
+        list.push(bucket[name])
+    }
+    list.sort(function(a,b){
+        return b.order-a.order
+    })
+    if(limit && list.length>limit){
+        list=list.slice(0,limit)
+    }
+    return list
+}
+
+TreeSearchAI.prototype.collectUniqueRoutesByState = function(routes){
+    var bucket={}
+    for(var ii=0,route;route=routes[ii];ii++){
+        if(!route || !route.stateKey)continue
+        if(!bucket[route.stateKey] || route.order>bucket[route.stateKey].order){
+            bucket[route.stateKey]=route
+        }
+    }
+    var list=[]
+    for(var name in bucket){
+        list.push(bucket[name])
+    }
+    list.sort(function(a,b){
+        return b.order-a.order
+    })
+    return list
+}
+
+TreeSearchAI.prototype.makeRouteCandidate = function(beforeGameData, afterGameData, moves, tag, isIrrelevant){
+    if(!this.isValidRouteMoves(moves))return null
+    return {
+        moves:moves,
+        tag:tag,
+        state:afterGameData,
+        stateKey:afterGameData.getBoardKey(),
+        fingerprint:this.getRouteFingerprint(afterGameData),
+        order:this.getRouteOrderScore(beforeGameData,afterGameData,moves,tag,isIrrelevant),
+    }
+}
+
+TreeSearchAI.prototype.getRouteFingerprint = function(gameData){
+    var stats=gameData.getRegionStats()
+    return [
+        gameData.playerId,
+        gameData.player[0].score,
+        gameData.player[1].score,
+        gameData.edgeCount[gameData.EDGE_NOW],
+        gameData.edgeCount[gameData.EDGE_NOT],
+        gameData.edgeCount[gameData.EDGE_WILL],
+        this.getTopologyFingerprint(gameData,stats),
+        gameData.getControlFingerprint(stats),
+    ].join('|')
+}
+
+TreeSearchAI.prototype.getTopologyFingerprint = function(gameData, stats){
+    return gameData.getStructureFingerprint(stats)
+}
+
+TreeSearchAI.prototype.getRouteOrderScore = function(beforeGameData, afterGameData, moves, tag, isIrrelevant){
+    var beforeStats=beforeGameData.getRegionStats()
+    var afterStats=afterGameData.getRegionStats()
+    var myGain=afterGameData.player[this.playerId].score-beforeGameData.player[this.playerId].score
+    var oppGain=afterGameData.player[1-this.playerId].score-beforeGameData.player[1-this.playerId].score
+    var score=this.evaluateStructure(afterGameData)
+
+    score+=(myGain-oppGain)*900
+    score-=moves.length*6
+
+    if(tag.indexOf('score-all')===0){
+        score+=720
+        score+=myGain*220
+        score+=(beforeStats.scoreCellNum-afterStats.scoreCellNum)*60
+    } else if(tag.indexOf('score-control')===0){
+        score+=640
+        score+=myGain*180
+        score+=afterStats.smallClosedNum*40
+        score+=afterStats.largeRingNum*30
+        if(afterGameData.edgeCount[afterGameData.EDGE_NOW])score+=180
+    } else if(tag.indexOf('score-stop')===0){
+        score+=540
+        score+=myGain*160
+        if(afterGameData.edgeCount[afterGameData.EDGE_NOW])score+=140
+    } else if(tag.indexOf('score-one')===0){
+        score+=420
+        score+=myGain*120
+        if(afterGameData.edgeCount[afterGameData.EDGE_NOW])score+=100
+    } else if(tag.indexOf('safe')===0){
+        score+=(beforeStats.largeNonRingNum-afterStats.largeNonRingNum)*220
+        score+=(beforeStats.innerLargeClosedNum-afterStats.innerLargeClosedNum)*140
+        score+=(beforeStats.boundaryLargeClosedNum-afterStats.boundaryLargeClosedNum)*90
+        if(tag==='safe-control'){
+            score+=260
+        } else if(tag==='safe-shape'){
+            score+=160
+        }
+        if(isIrrelevant || tag==='safe-irrelevant'){
+            var parity=(afterGameData.countSafeEdges()+afterStats.smallClosedNum)%2===0?1:-1
+            score+=parity*40
+        } else {
+            score+=160
+        }
+        if(
+            beforeGameData.edgeCount[beforeGameData.EDGE_NOT]===4 &&
+            afterGameData.edgeCount[afterGameData.EDGE_NOT]===2
+        ){
+            var opportunity=afterGameData.getStructureOpportunitySummary(null,true)
+            if(opportunity.lastOpportunityBeneficiarySign){
+                score+=
+                    (afterGameData.playerId===this.playerId?1:-1)*
+                    opportunity.lastOpportunityBeneficiarySign*260
+            }
+        }
+    } else if(tag==='sacrifice'){
+        score-=420
+        score-=afterStats.smallClosedNum*70
+        score-=afterStats.largeNonRingNum*210
+        score-=afterStats.largeRingNum*120
+        score-=oppGain*240
+    }
+
+    return score
+}
+
+TreeSearchAI.prototype.getExactSolvedScore = function(gameData){
+    var diff=
+        gameData.player[this.playerId].score-
+        gameData.player[1-this.playerId].score
+    if(!diff)return 0
+    return (diff>0?1:-1)*(this.MAX_SCORE/4)+diff*1000
+}
+
+TreeSearchAI.prototype.solveLateEndgame = function(gameData){
+    return this.solveLateEndgameWithLimit(
+        gameData,
+        this.EXACT_SAFE_EDGE_LIMIT
+    )
+}
+
+TreeSearchAI.prototype.lookupExactEndgame = function(gameData, maxSafeEdgeCount, alpha, beta){
+    this.exactEndgameCache=this.exactEndgameCache||{}
+    var key='late|'+maxSafeEdgeCount+'|'+gameData.getBoardKey()
+    var entry=this.exactEndgameCache[key]
+    if(!entry){
+        return {
+            key:key,
+            alpha:alpha,
+            beta:beta,
+            entry:null,
+        }
+    }
+    if(typeof entry==='number'){
+        entry={value:entry,flag:'exact'}
+        this.exactEndgameCache[key]=entry
+    }
+    if(entry.flag==='exact'){
+        return {
+            hit:true,
+            value:entry.value,
+            key:key,
+            alpha:alpha,
+            beta:beta,
+            entry:entry,
+        }
+    }
+    if(entry.flag==='lower' && entry.value>alpha)alpha=entry.value
+    if(entry.flag==='upper' && entry.value<beta)beta=entry.value
+    if(alpha>=beta){
+        return {
+            hit:true,
+            value:entry.value,
+            key:key,
+            alpha:alpha,
+            beta:beta,
+            entry:entry,
+        }
+    }
+    return {
+        key:key,
+        alpha:alpha,
+        beta:beta,
+        entry:entry,
+    }
+}
+
+TreeSearchAI.prototype.storeExactEndgame = function(key, value, alphaOrig, betaOrig){
+    var flag='exact'
+    if(value<=alphaOrig){
+        flag='upper'
+    } else if(value>=betaOrig){
+        flag='lower'
+    }
+    this.exactEndgameCache[key]={
+        value:value,
+        flag:flag,
+    }
+}
+
+TreeSearchAI.prototype.solveLateEndgameWithLimit = function(gameData, maxSafeEdgeCount, alpha, beta){
+    alpha=alpha!=null?alpha:-this.MAX_SCORE
+    beta=beta!=null?beta:this.MAX_SCORE
+    if(gameData.edgeCount[gameData.EDGE_NOT]>maxSafeEdgeCount){
+        return null
+    }
+    var alphaOrig=alpha
+    var betaOrig=beta
+    var ttInfo=this.lookupExactEndgame(gameData,maxSafeEdgeCount,alpha,beta)
+    if(ttInfo.hit){
+        return ttInfo.value
+    }
+    alpha=ttInfo.alpha
+    beta=ttInfo.beta
+    var key=ttInfo.key
+    if(gameData.winnerId!=null){
+        var terminalValue=this.getExactSolvedScore(gameData)
+        this.exactEndgameCache[key]={
+            value:terminalValue,
+            flag:'exact',
+        }
+        return terminalValue
+    }
+
+    var routes=this.generateExactRoutes(gameData)
+    if(!routes.length){
+        var resolvedValue=this.getExactSolvedScore(gameData)
+        this.exactEndgameCache[key]={
+            value:resolvedValue,
+            flag:'exact',
+        }
+        return resolvedValue
+    }
+
+    var maximizing=gameData.playerId===this.playerId
+    if(!maximizing){
+        routes=routes.slice().reverse()
+    }
+    var best=maximizing?-this.MAX_SCORE:this.MAX_SCORE
+    for(var ii=0,route;route=routes[ii];ii++){
+        var next=route.state||this.applyRouteToClone(gameData,route.moves)
+        if(!next)continue
+        var value=this.solveLateEndgameWithLimit(next,maxSafeEdgeCount,alpha,beta)
+        if(maximizing){
+            if(value>best)best=value
+            if(best>alpha)alpha=best
+        } else {
+            if(value<best)best=value
+            if(best<beta)beta=best
+        }
+        if(alpha>=beta){
+            break
+        }
+    }
+    this.storeExactEndgame(key,best,alphaOrig,betaOrig)
+    return best
+}
+
+TreeSearchAI.prototype.solveExactEndgame = function(gameData){
+    return this.solveLateEndgameWithLimit(gameData,0)
+}
+
+TreeSearchAI.prototype.evaluateStructure = function(gameData){
+    if(gameData.winnerId!=null){
+        return this.getTerminalScore(gameData)
+    }
+
+    var me=gameData.player[this.playerId].score
+    var opp=gameData.player[1-this.playerId].score
+    var currentSign=gameData.playerId===this.playerId?1:-1
+    var stats=gameData.getRegionStats()
+    var features=gameData.getEvalFeatures()
+    var score=(me-opp)*10000
+
+    score+=currentSign*120
+    score+=gameData.edgeCount[gameData.EDGE_NOW]*currentSign*50
+    score+=gameData.edgeCount[gameData.EDGE_NOT]*2
+    score-=gameData.edgeCount[gameData.EDGE_WILL]*6
+
+    score+=stats.scoreCellNum*currentSign*32
+    score-=stats.smallClosedNum*80
+    score+=stats.largeNonRingNum*currentSign*220
+    score+=stats.largeRingNum*currentSign*150
+    score+=stats.boundaryLargeClosedNum*currentSign*70
+    score+=stats.innerLargeClosedNum*currentSign*110
+    score+=stats.maxClosedSize*currentSign*18
+
+    if(features.safeEdgeCount<=12){
+        if(features.controlSwingCount){
+            score+=currentSign*features.controlSwingCount*18
+        }
+        if(features.criticalSplitZoneNum){
+            score+=currentSign*features.criticalSplitZoneNum*42
+        }
+        var opportunityOwnerSwing=
+            features.currentOwnedOpportunityZoneNum-
+            features.opponentOwnedOpportunityZoneNum
+        if(opportunityOwnerSwing){
+            score+=currentSign*opportunityOwnerSwing*
+                (features.safeEdgeCount<=6?64:36)
+        }
+        if(features.phase!=='layout' && features.lastOpportunityOwnerSign){
+            score+=currentSign*features.lastOpportunityOwnerSign*
+                (features.safeEdgeCount<=6?120:72)
+        }
+        if(features.phase!=='layout' && features.lastCriticalSplitZone){
+            score+=currentSign*90
+        }
+    }
+    if(features.phase==='layout' && features.controlSwingCount===0){
+        score+=currentSign*features.safeSmallParitySignal*16
+    } else if(features.phase==='transition'){
+        if(features.activeLargeScoreRegionNum){
+            score+=currentSign*(70+features.activeLargeScoreCellNum*22)
+        } else if(stats.largeClosedNum>0 && features.safeEdgeCount<=4){
+            score-=currentSign*(80+features.largeChainNum*35+features.largeRingNum*25)
+        }
+    }
+
+    return score
+}
+
+TreeSearchAI.prototype.evaluate = function(gameData){
+    if(gameData.winnerId!=null){
+        return this.getTerminalScore(gameData)
+    }
+    if(!gameData.edgeCount[gameData.EDGE_NOT]){
+        return this.solveExactEndgame(gameData)
+    }
+    return this.evaluateStructure(gameData)
+}
+
+TreeSearchAI.prototype.getFallbackWhere = function(gameData){
+    var groups=[gameData.EDGE_NOW,gameData.EDGE_NOT,gameData.EDGE_WILL]
+    for(var ii=0,number;number=groups[ii];ii++){
+        var edges=gameData.getAllEdges(number)
+        if(edges.length)return edges[0]
+    }
+    return {'x':1,'y':0}
+}
+
+</script>
+<script>
+var REPLAY={"config":{"ai1":"ts","ai2":"ro","xsize":6,"ysize":6,"seed":null},"results":[{"ai1":"ts","ai2":"ro","wins":[3,2],"games":[{"winner":1,"history":[[1,0,0],[11,4,1],[0,1,0],[9,8,1],[3,0,0],[4,9,1],[4,1,0],[12,1,1],[11,0,0],[0,3,1],[7,0,0],[12,9,1],[9,0,0],[5,0,1],[7,2,0],[9,10,1],[10,3,0],[5,6,1],[11,8,0],[8,5,1],[4,3,0],[1,6,1],[3,6,0],[7,12,1],[7,8,0],[11,6,1],[0,9,0],[11,12,1],[0,11,0],[4,7,1],[4,11,0],[3,10,1],[1,12,0],[5,4,1],[9,2,0],[7,4,1],[9,6,0],[5,12,1],[9,12,0],[0,7,1],[2,5,0],[6,9,1],[2,3,0],[12,11,1],[10,7,0],[8,7,1],[12,7,1],[2,11,1],[1,10,0],[3,12,0],[2,7,0],[2,9,1],[1,8,0],[3,8,0],[0,5,0],[1,4,1],[1,2,1],[2,1,1],[3,2,1],[3,4,1],[4,5,1],[6,5,1],[7,6,1],[6,7,1],[5,8,1],[5,10,1],[6,11,1],[8,11,1],[7,10,0],[8,9,0],[10,9,0],[11,10,0],[10,11,0],[12,3,0],[11,2,1],[10,1,1],[8,1,1],[6,1,1]],"seed":null},{"winner":0,"history":[[1,0,0],[0,5,1],[0,1,0],[12,9,1],[3,0,0],[0,7,1],[4,1,0],[9,8,1],[7,0,0],[7,12,1],[9,0,0],[2,9,1],[11,0,0],[9,12,1],[5,0,0],[9,6,1],[8,1,0],[10,5,1],[12,1,0],[4,7,1],[1,4,0],[12,7,1],[4,3,0],[3,10,1],[8,3,0],[12,5,1],[12,3,0],[6,5,1],[7,8,0],[1,10,1],[3,6,0],[11,8,1],[10,3,0],[3,12,1],[6,7,0],[12,11,1],[4,5,0],[0,3,1],[7,4,0],[5,10,1],[8,9,0],[6,11,1],[10,11,0],[0,11,1],[6,9,0],[7,10,1],[8,11,1],[9,10,1],[10,9,1],[11,12,1],[11,10,0],[1,8,0],[0,9,1],[1,2,1],[2,3,0],[2,1,0],[3,2,0],[3,4,0],[2,5,0],[1,6,0],[2,7,0],[3,8,0],[4,9,0],[5,8,0],[5,6,0],[5,4,0],[6,1,0],[6,3,1],[5,2,0],[7,2,0]],"seed":null},{"winner":0,"history":[[1,0,0],[0,5,1],[0,1,0],[8,11,1],[3,0,0],[11,12,1],[4,1,0],[1,12,1],[7,0,0],[7,2,1],[9,0,0],[11,2,1],[11,0,0],[10,5,1],[5,0,0],[10,3,1],[12,5,0],[4,9,1],[6,3,0],[7,10,1],[2,5,0],[5,4,1],[0,3,0],[8,9,1],[7,6,0],[0,9,1],[0,7,0],[5,6,1],[3,4,0],[10,9,1],[2,3,0],[10,11,1],[9,2,0],[2,7,1],[8,5,0],[4,11,1],[2,9,0],[11,8,1],[2,11,0],[5,8,1],[5,12,0],[12,7,1],[8,7,0],[9,10,1],[9,12,0],[9,8,0],[2,1,0],[3,2,1],[4,3,1],[5,2,1],[6,1,1],[8,1,1],[10,1,1],[12,1,1],[1,2,1],[1,4,1],[1,6,1],[1,8,1],[0,11,1],[1,10,0],[4,7,0],[6,7,1],[7,8,1],[6,9,1],[5,10,1],[7,12,1],[6,11,0],[11,10,0],[12,9,1],[12,11,1],[3,10,1],[3,12,0],[3,8,0],[3,6,0],[4,5,0],[6,5,0],[7,4,0],[8,3,0],[9,4,0],[9,6,0],[10,7,0],[11,6,0],[11,4,0]],"seed":null},{"winner":1,"history":[[1,0,0],[8,9,1],[0,1,0],[3,10,1],[3,0,0],[9,8,1],[4,1,0],[3,4,1],[7,0,0],[6,9,1],[9,0,0],[1,6,1],[11,0,0],[12,9,1],[11,8,0],[0,11,1],[0,3,0],[5,2,1],[8,3,0],[2,7,1],[12,3,0],[6,7,1],[6,5,0],[6,3,1],[10,5,0],[3,12,1],[0,9,0],[10,1,1],[0,5,0],[7,6,1],[10,3,0],[5,10,1],[12,7,0],[10,11,1],[7,12,0],[6,11,1],[9,12,0],[1,12,1],[12,11,0],[12,5,1],[3,6,0],[2,3,1],[9,6,0],[5,6,1],[2,9,0],[5,0,1],[6,1,0],[11,6,0],[11,4,1],[11,2,1],[12,1,1],[10,7,1],[8,7,1],[7,8,1],[7,10,1],[8,11,1],[9,10,1],[10,9,1],[11,12,1],[11,10,0],[4,7,0],[4,9,1],[3,8,0],[5,8,0],[8,1,0],[9,2,1],[9,4,1],[7,4,1],[7,2,0],[8,5,0],[2,1,0],[1,2,1],[1,4,1],[2,5,1],[4,5,1],[4,3,1],[5,4,0],[3,2,0],[0,7,0],[1,8,1],[1,10,1]],"seed":null},{"winner":0,"history":[[1,0,0],[1,10,1],[0,1,0],[5,12,1],[3,0,0],[12,9,1],[4,1,0],[2,9,1],[5,0,0],[3,6,1],[7,0,0],[12,7,1],[9,0,0],[4,9,1],[11,0,0],[10,1,1],[2,7,0],[1,12,1],[1,6,0],[2,5,1],[0,3,0],[3,12,1],[4,3,0],[5,4,1],[8,3,0],[11,12,1],[12,3,0],[6,5,1],[10,5,0],[8,5,1],[6,7,0],[8,7,1],[8,9,0],[9,12,1],[7,12,0],[12,11,1],[12,5,0],[5,8,1],[9,8,0],[10,3,1],[6,11,0],[7,2,1],[2,3,0],[11,8,1],[0,11,0],[2,11,1],[7,10,1],[8,11,0],[1,8,0],[0,7,1],[0,9,1],[9,10,1],[11,10,0],[10,11,1],[10,9,1],[1,4,1],[0,5,0],[1,2,0],[2,1,0],[3,2,0],[3,4,0],[4,5,0],[5,6,0],[4,7,0],[3,8,0],[3,10,0],[4,11,0],[5,10,0],[6,9,0],[7,8,0],[7,6,0],[7,4,0],[6,3,0]],"seed":null}]},{"ai1":"ro","ai2":"ts","wins":[1,4],"games":[{"winner":1,"history":[[11,10,0],[1,0,1],[2,11,0],[0,1,1],[9,12,0],[3,0,1],[5,2,0],[7,0,1],[12,11,0],[9,10,1],[7,8,0],[9,0,1],[0,7,0],[11,0,1],[12,5,0],[0,3,1],[12,1,0],[8,3,1],[2,7,0],[12,3,1],[2,5,0],[6,5,1],[1,4,0],[5,0,1],[9,2,0],[9,6,1],[12,9,0],[12,7,1],[11,6,0],[5,8,1],[3,4,0],[0,9,1],[3,12,0],[3,8,1],[5,12,0],[7,12,1],[9,8,0],[7,6,1],[3,2,0],[4,9,1],[6,3,0],[5,6,1],[1,10,0],[6,11,1],[10,3,0],[9,4,1],[7,10,1],[8,11,0],[11,12,0],[10,11,1],[0,11,1],[1,12,0],[7,4,0],[7,2,1],[8,5,1],[10,5,1],[11,4,1],[11,2,1],[10,1,1],[8,1,1],[6,1,1],[4,1,1],[2,1,1],[1,2,1],[2,3,1],[4,3,1],[5,4,1],[4,5,1]],"seed":null},{"winner":1,"history":[[3,4,0],[1,0,1],[1,8,0],[0,1,1],[10,1,0],[3,0,1],[9,6,0],[5,0,1],[12,11,0],[7,0,1],[4,9,0],[0,3,1],[8,3,0],[12,3,1],[10,11,0],[5,4,1],[10,7,0],[0,5,1],[3,8,0],[0,9,1],[1,4,0],[12,5,1],[5,2,0],[7,4,1],[9,12,0],[6,7,1],[9,4,0],[3,2,1],[2,7,0],[8,9,1],[5,10,0],[12,9,1],[7,10,0],[0,11,1],[6,11,0],[3,12,1],[9,0,0],[12,7,1],[11,2,0],[4,5,1],[1,12,0],[10,9,1],[7,6,0],[4,11,1],[5,12,0],[11,0,0],[12,1,1],[11,4,1],[10,3,0],[9,2,0],[8,1,0],[3,10,0],[1,10,1],[2,11,0],[2,9,0],[1,6,0],[0,7,1],[2,5,1],[4,7,1],[3,6,0],[6,1,0],[7,2,1],[6,3,1],[4,3,1],[2,3,1],[2,1,1],[1,2,0],[4,1,0],[8,11,0],[7,12,1],[9,10,1],[9,8,1],[8,7,1],[7,8,1],[6,9,1],[5,8,1],[5,6,1],[6,5,1],[8,5,1],[10,5,1]],"seed":null},{"winner":1,"history":[[3,0,0],[2,1,1],[7,12,0],[5,0,1],[6,9,0],[7,0,1],[11,10,0],[9,0,1],[9,12,0],[11,0,1],[12,3,0],[0,3,1],[12,7,0],[4,3,1],[8,11,0],[7,8,1],[0,5,0],[8,3,1],[11,4,0],[4,5,1],[0,9,0],[8,5,1],[1,0,0],[0,7,1],[10,9,0],[4,7,1],[9,2,0],[3,10,1],[0,11,0],[5,12,1],[7,4,0],[6,1,1],[3,4,0],[1,4,1],[11,6,0],[5,4,1],[11,12,0],[12,1,1],[3,8,0],[1,12,1],[1,8,0],[5,10,1],[9,6,0],[3,12,1],[8,7,0],[10,11,1],[12,11,0],[9,10,0],[7,6,0],[6,7,1],[6,5,1],[5,6,1],[5,8,1],[4,9,1],[2,9,1],[1,10,1],[2,11,1],[4,11,1],[6,11,1],[7,10,1],[8,9,1],[9,8,1],[10,7,1],[12,9,1],[11,8,0],[2,7,0],[1,6,1],[2,5,1],[3,6,1]],"seed":null},{"winner":1,"history":[[7,6,0],[1,0,1],[10,3,0],[0,1,1],[2,7,0],[3,0,1],[4,1,0],[5,0,1],[5,8,0],[7,0,1],[9,6,0],[9,0,1],[12,11,0],[11,0,1],[4,7,0],[0,3,1],[3,4,0],[6,3,1],[8,1,0],[2,3,1],[10,11,0],[5,4,1],[12,1,0],[0,5,1],[10,5,0],[12,5,1],[0,9,0],[2,5,1],[1,12,0],[0,7,1],[10,9,0],[7,4,1],[0,11,0],[12,7,1],[8,11,0],[12,3,1],[5,10,0],[7,8,1],[5,12,0],[11,8,1],[7,10,0],[2,9,1],[9,8,0],[3,10,1],[3,12,0],[4,5,1],[3,6,0],[3,8,0],[4,9,0],[6,9,0],[8,9,0],[9,12,0],[9,10,1],[11,10,1],[12,9,0],[11,12,0],[10,1,0],[9,2,1],[11,2,1],[11,4,1],[11,6,1],[10,7,1],[8,7,1],[6,7,1],[5,6,1],[6,5,1],[8,5,1],[9,4,1],[8,3,1],[7,2,1],[6,1,1],[5,2,1],[4,3,1]],"seed":null},{"winner":0,"history":[[11,10,0],[1,0,1],[1,10,0],[0,1,1],[7,6,0],[3,0,1],[2,7,0],[5,0,1],[9,0,0],[7,0,1],[6,1,0],[11,0,1],[5,4,0],[9,2,1],[0,5,0],[0,3,1],[0,9,0],[2,3,1],[6,5,0],[6,3,1],[4,7,0],[0,7,1],[10,11,0],[5,8,1],[4,9,0],[12,3,1],[9,4,0],[11,4,1],[10,7,0],[8,9,1],[2,11,0],[12,5,1],[9,8,0],[12,7,1],[7,8,0],[3,12,1],[7,12,0],[3,2,1],[8,11,0],[2,5,1],[12,1,0],[12,9,1],[5,12,0],[6,9,1],[5,10,0],[7,10,0],[6,11,0],[4,11,0],[3,10,0],[7,4,0],[8,5,1],[0,11,1],[1,12,0],[12,11,0],[11,12,1],[8,1,1],[7,2,0],[8,3,0],[11,2,0],[10,3,1],[10,1,1],[3,6,1],[3,8,0],[2,9,0],[1,8,0],[1,6,0],[1,4,0],[1,2,0],[2,1,0],[4,1,0],[5,2,0],[4,3,0]],"seed":null}]}]};
+var AI_MAP_REPLAY={"gr":"GreedyRandomAI","ok":"OffensiveKeeperAI","ro":"RolloutAI","ts":"TreeSearchAI"};
+
+// 填充摘要
+var summaryEl=document.getElementById("summary")
+var html=""
+REPLAY.results.forEach(function(r,i){
+  html+="第"+(i+1)+"轮: "+AI_MAP_REPLAY[r.ai1]+"(先手) vs "+AI_MAP_REPLAY[r.ai2]+"(后手) "+r.wins[0]+":"+r.wins[1]+" &nbsp;"
+})
+summaryEl.innerHTML=html
+
+// 填充选择器
+var selectSet=document.getElementById("selectSet")
+var selectGame=document.getElementById("selectGame")
+REPLAY.results.forEach(function(r,i){
+  var opt=document.createElement("option")
+  opt.value=i;opt.text="第"+(i+1)+"轮 ("+AI_MAP_REPLAY[r.ai1]+" vs "+AI_MAP_REPLAY[r.ai2]+")"
+  selectSet.appendChild(opt)
+})
+function updateGameSelect(){
+  selectGame.innerHTML=""
+  var games=REPLAY.results[selectSet.value].games
+  for(var i=0;i<games.length;i++){
+    var opt=document.createElement("option")
+    opt.value=i;opt.text="第"+(i+1)+"局 (winner:"+(games[i].winner===0?"先手":"后手")+")"
+    selectGame.appendChild(opt)
+  }
+}
+selectSet.onchange=updateGameSelect
+updateGameSelect()
+
+// ========== 逐步重放引擎 ==========
+var rpHistory=null, rpStep=0, rpTimer=null, rpWinner=-1
+var rpGame=null
+
+function loadGame(){
+  rpStop()
+  var setIdx=~~selectSet.value
+  var gameIdx=~~selectGame.value
+  var g=REPLAY.results[setIdx].games[gameIdx]
+  rpHistory=g.history
+  rpWinner=g.winner
+  rpStep=0
+  rebuildBoard(0)
+}
+
+// 从空盘重放到第step步
+function rebuildBoard(step){
+  var xsize=REPLAY.config.xsize,ysize=REPLAY.config.ysize
+  rpGame=new Game().init(xsize,ysize)
+  gameview.init(rpGame,"hasInited")
+  rpGame.win.pop()
+  rpGame.lock=1
+  for(var i=0;i<step;i++){
+    rpGame.lock=0
+    rpGame.putxy(rpHistory[i][0],rpHistory[i][1])
+  }
+  rpGame.lock=1
+  rpStep=step
+  updateStepInfo()
+}
+
+function updateStepInfo(){
+  document.getElementById("stepInfo").textContent=rpStep+"/"+(rpHistory?rpHistory.length:0)
+  var btnToggle=document.getElementById("btnToggle")
+  btnToggle.textContent=rpTimer?"暂停":"播放"
+}
+
+// 播放/暂停
+function rpToggle(){
+  if(rpTimer){rpStop();return}
+  if(!rpHistory)return
+  if(rpStep>=rpHistory.length)return
+  rpTimer=setInterval(function(){
+    if(rpStep>=rpHistory.length){rpStop();showWinner();return}
+    rpGame.lock=0
+    rpGame.putxy(rpHistory[rpStep][0],rpHistory[rpStep][1])
+    rpGame.lock=1
+    rpStep++
+    updateStepInfo()
+  },~~document.getElementById("speed").value)
+  updateStepInfo()
+}
+
+function rpStop(){
+  if(rpTimer){clearInterval(rpTimer);rpTimer=null}
+  updateStepInfo()
+}
+
+// 前进一步
+function rpForward(){
+  rpStop()
+  if(!rpHistory||rpStep>=rpHistory.length)return
+  rpGame.lock=0
+  rpGame.putxy(rpHistory[rpStep][0],rpHistory[rpStep][1])
+  rpGame.lock=1
+  rpStep++
+  updateStepInfo()
+  if(rpStep>=rpHistory.length)showWinner()
+}
+
+// 后退一步
+function rpBack(){
+  rpStop()
+  if(!rpHistory||rpStep<=0)return
+  rebuildBoard(rpStep-1)
+}
+
+function showWinner(){
+  gameview.gameinfo.children[rpWinner].style.background=gameview.playerColor[rpWinner]
+  gameview.gametip.innerText=(rpWinner===0?"先手":"后手")+" 获胜"
+}
+
+// 上一局/下一局
+function prevGame(){
+  if(selectGame.selectedIndex>0){selectGame.selectedIndex--;loadGame()}
+}
+function nextGame(){
+  if(selectGame.selectedIndex<selectGame.options.length-1){selectGame.selectedIndex++;loadGame()}
+}
+
+// 减速/加速
+function slower(){
+  var el=document.getElementById("speed");el.value=Math.min(500,~~el.value+40)
+}
+function faster(){
+  var el=document.getElementById("speed");el.value=Math.max(20,~~el.value-40)
+}
+
+// 快捷键
+document.onkeydown=function(e){
+  if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT")return
+  switch(e.key){
+    case"ArrowLeft":rpBack();e.preventDefault();break
+    case"ArrowRight":rpForward();e.preventDefault();break
+    case"ArrowUp":prevGame();e.preventDefault();break
+    case"ArrowDown":nextGame();e.preventDefault();break
+    case" ":rpToggle();e.preventDefault();break
+    case"[":faster();break
+    case"]":slower();break
+  }
+}
+</script>
+</body></html>

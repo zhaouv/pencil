@@ -759,7 +759,7 @@ TreeSearchAI.prototype.generateSafeRoutes = function(gameData, limit){
 }
 
 TreeSearchAI.prototype.generateSacrificeRoutes = function(gameData, limit){
-    var analyses=gameData.getSacrificeEdgeAnalyses()
+    var analyses=this.getPreferredSacrificeAnalyses(gameData)
     var routes=[]
     for(var ii=0,analysis;analysis=analyses[ii];ii++){
         var route=this.makeRouteFromAnalysis(gameData,analysis,'sacrifice')
@@ -832,6 +832,30 @@ TreeSearchAI.prototype.generateExactSafeRoutes = function(gameData){
     return this.collectRepresentativeRoutes(routes)
 }
 
+TreeSearchAI.prototype.isSmallClosedSacrificeAnalysis = function(analysis){
+    return !!analysis && !analysis.isRing && analysis.regionSize<=2
+}
+
+TreeSearchAI.prototype.getPreferredSacrificeAnalyses = function(gameData){
+    var analyses=gameData.getSacrificeEdgeAnalyses()
+    var hasSmallClosed=false
+    for(var ii=0,analysis;analysis=analyses[ii];ii++){
+        if(this.isSmallClosedSacrificeAnalysis(analysis)){
+            hasSmallClosed=true
+            break
+        }
+    }
+    if(!hasSmallClosed)return analyses
+
+    var filtered=[]
+    for(var jj=0,item;item=analyses[jj];jj++){
+        if(this.isSmallClosedSacrificeAnalysis(item)){
+            filtered.push(item)
+        }
+    }
+    return filtered
+}
+
 TreeSearchAI.prototype.getExactSacrificeBucketKey = function(analysis){
     if(!analysis || !analysis.state)return null
     var next=analysis.state
@@ -878,7 +902,7 @@ TreeSearchAI.prototype.getExactSacrificeRepresentativeKey = function(gameData, a
 }
 
 TreeSearchAI.prototype.getExactSacrificeRepresentativeAnalyses = function(gameData, okHint){
-    var analyses=gameData.getSacrificeEdgeAnalyses()
+    var analyses=this.getPreferredSacrificeAnalyses(gameData)
     var bucket={}
     for(var ii=0,analysis;analysis=analyses[ii];ii++){
         var key=this.getExactSacrificeRepresentativeKey(gameData,analysis)
